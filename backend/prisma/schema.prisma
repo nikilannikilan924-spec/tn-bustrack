@@ -1,0 +1,71 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  phone     String   @unique
+  email     String?  @unique
+  password  String
+  alerts    Alert[]
+  createdAt DateTime @default(now())
+}
+
+model Route {
+  id           String   @id @default(uuid())
+  routeNumber  String   @unique
+  name         String
+  origin       String
+  destination  String
+  operator     String
+  totalStops   Int
+  stops        Stop[]
+  buses        Bus[]
+  createdAt    DateTime @default(now())
+}
+
+model Stop {
+  id             String   @id @default(uuid())
+  name           String
+  lat            Float
+  lng            Float
+  stopOrder      Int
+  scheduledTime  String
+  routeId        String
+  route          Route    @relation(fields: [routeId], references: [id])
+  alerts         Alert[]
+  createdAt      DateTime @default(now())
+}
+
+model Bus {
+  id             String   @id @default(uuid())
+  busNumber      String   @unique
+  routeId        String
+  route          Route    @relation(fields: [routeId], references: [id])
+  lat            Float
+  lng            Float
+  speed          Float
+  seatsTotal     Int
+  seatsOccupied  Int
+  isActive       Boolean  @default(true)
+  currentStop    String?
+  etaMinutes     Int      @default(0)
+  lastUpdated    DateTime @default(now())
+}
+
+model Alert {
+  id                   String   @id @default(uuid())
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id])
+  stopId               String
+  stop                 Stop     @relation(fields: [stopId], references: [id])
+  notifyMinutesBefore  Int      @default(10)
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+}

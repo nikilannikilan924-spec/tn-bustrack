@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="64" fill="#E53935"/>
+  <text x="256" y="300" font-family="system-ui,sans-serif" font-size="220" font-weight="900" fill="white" text-anchor="middle">TN</text>
+  <rect x="120" y="360" width="272" height="20" rx="10" fill="rgba(255,255,255,0.3)"/>
+  <rect x="180" y="390" width="152" height="12" rx="6" fill="rgba(255,255,255,0.2)"/>
+</svg>

@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum FavoriteType {
+  ROUTE
+  STOP
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+model User {
+  id         String     @id @default(uuid())
+  email      String     @unique
+  name       String?
+  createdAt  DateTime   @default(now())
+  favorites  Favorite[]
+  alerts     Alert[]
+}
+
+model Route {
+  id          String   @id @default(uuid())
+  name        String
+  number      String
+  origin      String
+  destination String
+  status      String
+  stops       Stop[]
+  buses       Bus[]
+  createdAt   DateTime @default(now())
+}
+
+model Stop {
+  id         String   @id @default(uuid())
+  name       String
+  lat        Float
+  lng        Float
+  sequence   Int
+  route      Route    @relation(fields: [routeId], references: [id])
+  routeId    String
+  createdAt  DateTime @default(now())
+}
+
+model Bus {
+  id           String    @id @default(uuid())
+  number       String
+  route        Route     @relation(fields: [routeId], references: [id])
+  routeId      String
+  occupancy    Int
+  status       String
+  eta          Int
+  currentStop  String?
+  latitude     Float
+  longitude    Float
+  locations    Location[]
+  updatedAt    DateTime  @updatedAt
+}
+
+model Location {
+  id       String   @id @default(uuid())
+  bus      Bus      @relation(fields: [busId], references: [id])
+  busId    String
+  lat      Float
+  lng      Float
+  captured DateTime @default(now())
+}
+
+model Alert {
+  id         String       @id @default(uuid())
+  title      String
+  message    String
+  severity   AlertSeverity
+  route      Route?        @relation(fields: [routeId], references: [id])
+  routeId    String?
+  createdAt  DateTime     @default(now())
+}
+
+model Favorite {
+  id           String       @id @default(uuid())
+  user         User         @relation(fields: [userId], references: [id])
+  userId       String
+  favoriteType FavoriteType
+  route        Route?       @relation(fields: [routeId], references: [id])
+  routeId      String?
+  stop         Stop?        @relation(fields: [stopId], references: [id])
+  stopId       String?
+  createdAt    DateTime     @default(now())
+}
