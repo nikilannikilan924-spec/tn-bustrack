@@ -65,9 +65,9 @@ export default function HomePage() {
       </section>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Card title={lang === 'ta' ? 'இயக்கத்தில்' : 'Running'} value={String(running)} glow="green" />
+        <Card title={lang === 'ta' ? 'இயக்கத்தில்' : 'Running'} value={String(running)} glow="teal" />
         <Card title={lang === 'ta' ? 'தாமதம்' : 'Delayed'} value={String(delayed)} glow="amber" />
-        <Card title={lang === 'ta' ? 'நிறுத்தப்பட்டது' : 'Stopped'} value={String(stopped)} glow="slate" />
+        <Card title={lang === 'ta' ? 'நிறுத்தப்பட்டது' : 'Stopped'} value={String(stopped)} />
         <Card title={lang === 'ta' ? 'காலி இருக்கைகள்' : 'Free Seats'} value={String(totalSeats)} glow="blue" />
       </div>
 
