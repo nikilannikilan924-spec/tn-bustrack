@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { Alert } from '@/lib/mock-data';
 
 interface AlertCardProps {
@@ -7,16 +8,16 @@ interface AlertCardProps {
 const severityStyles: Record<string, string> = {
   INFO: 'border-[#00BCD4]/30 bg-[#00BCD4]/8 text-[#00BCD4]',
   WARNING: 'border-[#FFB300]/30 bg-[#FFB300]/8 text-[#FFB300]',
-  CRITICAL: 'border-[#E53935]/30 bg-[#E53935]/8 text-[#E53935]'
+  CRITICAL: 'border-[#0EA5E9]/30 bg-[#0EA5E9]/8 text-[#0EA5E9]'
 };
 
 const severityDot: Record<string, string> = {
   INFO: 'bg-[#00BCD4] shadow-[0_0_8px_rgba(0,188,212,0.5)]',
   WARNING: 'bg-[#FFB300] shadow-[0_0_8px_rgba(255,179,0,0.4)]',
-  CRITICAL: 'bg-[#E53935] shadow-[0_0_8px_rgba(229,57,53,0.6)]'
+  CRITICAL: 'bg-[#0EA5E9] shadow-[0_0_8px_rgba(14,165,233,0.6)]'
 };
 
-export function AlertCard({ alert }: AlertCardProps) {
+export const AlertCard = memo(function AlertCard({ alert }: AlertCardProps) {
   return (
     <div className="group rounded-3xl border border-[var(--border)] bg-[var(--bg-elevated)] p-6 shadow-lg shadow-[var(--shadow)] backdrop-blur transition hover:border-[var(--border-hover)]">
       <div className="flex items-start justify-between gap-4">
@@ -36,4 +37,4 @@ export function AlertCard({ alert }: AlertCardProps) {
       </p>
     </div>
   );
-}
+});

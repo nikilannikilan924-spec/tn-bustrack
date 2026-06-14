@@ -59,27 +59,23 @@ export interface Favorite {
   savedAt: string;
 }
 
-const routes = seed.routes as Route[];
+const routes: Route[] = seed.routes as Route[];
 const routeMap = new Map(routes.map((route) => [route.id, route]));
 
-const buses = (seed.buses as Omit<Bus, 'route'>[]).map((bus) => ({
+const buses: Bus[] = (seed.buses as Omit<Bus, 'route'>[]).map((bus) => ({
   ...bus,
   route: routeMap.get(bus.routeId) as Route
 }));
 
-const alerts = seed.alerts as Alert[];
+const alerts: Alert[] = seed.alerts as Alert[];
 const favorites: Favorite[] = [];
 
 const stops = routes.flatMap((route) => route.stops.map((stop) => ({ ...stop, routeId: route.id })));
 
+const mockData = Object.freeze({ buses, routes, stops, alerts, favorites });
+
 export { routes, buses, alerts, favorites, stops };
 
 export function getMockDashboardData() {
-  return {
-    buses,
-    routes,
-    stops,
-    alerts,
-    favorites
-  };
+  return mockData;
 }

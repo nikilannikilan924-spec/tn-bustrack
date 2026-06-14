@@ -13,7 +13,7 @@ const LiveMap = dynamic(() => import('@/components/map/LiveMap'), { ssr: false }
 
 export function MapBoard() {
   const { t } = useLanguage();
-  const { buses: seedBuses, routes } = getMockDashboardData();
+  const { buses: seedBuses, routes } = useMemo(() => getMockDashboardData(), []);
   const [buses, setBuses] = useState<Bus[]>(seedBuses);
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [stopSearch, setStopSearch] = useState('');
@@ -52,17 +52,16 @@ export function MapBoard() {
 
   return (
     <div className="space-y-5 pb-28 max-sm:space-y-4">
-      <div className="relative overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--bg-elevated)] p-6 shadow-lg shadow-[var(--shadow)] backdrop-blur max-sm:rounded-2xl max-sm:p-5">
-        <div className="pointer-events-none absolute -right-16 -top-16 h-52 w-52 rounded-full bg-[#00BCD4]/8 blur-[80px]" />
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div className="relative">
-            <p className="font-orbitron text-[10px] uppercase tracking-[0.3em] text-[#00BCD4]">{t('map.view')}</p>
-            <h1 className="mt-2 text-2xl font-semibold text-[var(--text-primary)] max-sm:text-xl">{t('map.title')}</h1>
-            <p className="mt-2 text-sm text-[var(--text-secondary)]">{t('map.subtitle')}</p>
+      <div className="gradient-header rounded-3xl p-6 shadow-lg shadow-[var(--shadow-heavy)] max-sm:rounded-2xl max-sm:p-5">
+        <div className="gradient-header-text flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="font-orbitron text-[10px] uppercase tracking-[0.3em] text-white/60">{t('map.view')}</p>
+            <h1 className="mt-2 text-2xl font-bold text-white max-sm:text-xl">{t('map.title')}</h1>
+            <p className="mt-2 text-sm text-white/70">{t('map.subtitle')}</p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <Card title={t('map.vehicles')} value={String(filteredBuses.length)} compact glow="teal" />
-            <Card title={t('map.running')} value={String(running)} compact glow="red" />
+            <Card title={t('map.running')} value={String(running)} compact glow="blue" />
           </div>
         </div>
       </div>
@@ -70,7 +69,7 @@ export function MapBoard() {
       <div className="grid gap-4 lg:grid-cols-[1.45fr_0.55fr] lg:gap-6">
         <LiveMap buses={filteredBuses} routes={routes} onBusSelect={setSelectedBusId} />
         <aside className="space-y-4">
-          <div className="rounded-3xl border border-[var(--border)] bg-[var(--bg-elevated)] p-5 shadow-lg shadow-[var(--shadow)] backdrop-blur max-sm:rounded-2xl max-sm:p-4">
+          <div className="glass rounded-3xl p-5 shadow-lg shadow-[var(--shadow-heavy)] max-sm:rounded-2xl max-sm:p-4">
             <Input
               placeholder={t('map.searchStop')}
               value={stopSearch}
@@ -92,27 +91,27 @@ export function MapBoard() {
             </p>
           </div>
 
-          <div className="rounded-3xl border border-[var(--border)] bg-[var(--bg-elevated)] p-5 shadow-lg shadow-[var(--shadow)] backdrop-blur max-sm:rounded-2xl max-sm:p-4">
+          <div className="glass rounded-3xl p-5 shadow-lg shadow-[var(--shadow-heavy)] max-sm:rounded-2xl max-sm:p-4">
             <p className="font-orbitron text-[10px] font-medium uppercase tracking-[0.25em] text-[var(--text-secondary)]">
               {t('map.legend')}
             </p>
             <div className="mt-4 space-y-2 text-sm">
-              <div className="flex items-center gap-3 rounded-xl bg-black/[0.03] px-3 py-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-[#E53935] shadow-[0_0_8px_rgba(229,57,53,0.5)]" />
+              <div className="flex items-center gap-3 rounded-xl bg-[var(--overlay-subtle)] px-3 py-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-[#22C55E] shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
                 <span className="text-[var(--text-secondary)]">{t('map.legend.running')}</span>
               </div>
-              <div className="flex items-center gap-3 rounded-xl bg-black/[0.03] px-3 py-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-[#FFB300] shadow-[0_0_8px_rgba(255,179,0,0.4)]" />
+              <div className="flex items-center gap-3 rounded-xl bg-[var(--overlay-subtle)] px-3 py-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-[#F59E0B] shadow-[0_0_8px_rgba(245,158,11,0.4)]" />
                 <span className="text-[var(--text-secondary)]">{t('map.legend.delayed')}</span>
               </div>
-              <div className="flex items-center gap-3 rounded-xl bg-black/[0.03] px-3 py-2">
+              <div className="flex items-center gap-3 rounded-xl bg-[var(--overlay-subtle)] px-3 py-2">
                 <span className="h-2.5 w-2.5 rounded-full bg-[var(--text-muted)]" />
                 <span className="text-[var(--text-secondary)]">{t('map.legend.stopped')}</span>
               </div>
             </div>
           </div>
 
-          <div className="rounded-3xl border border-[var(--border)] bg-[var(--bg-elevated)] p-5 shadow-lg shadow-[var(--shadow)] backdrop-blur max-sm:rounded-2xl max-sm:p-4">
+          <div className="glass rounded-3xl p-5 shadow-lg shadow-[var(--shadow-heavy)] max-sm:rounded-2xl max-sm:p-4">
             <div className="flex items-center justify-between">
               <p className="font-orbitron text-[10px] font-medium uppercase tracking-[0.25em] text-[var(--text-secondary)]">
                 {t('map.vehicles')}
@@ -121,7 +120,7 @@ export function MapBoard() {
                 <button
                   type="button"
                   onClick={() => { setStopSearch(''); setSelectedBusId(null); }}
-                  className="text-[10px] text-[#E53935] hover:underline"
+                  className="text-[10px] text-[#0EA5E9] hover:underline"
                 >
                   Clear
                 </button>
@@ -145,18 +144,18 @@ export function MapBoard() {
                         onClick={() => setSelectedBusId(bus.id)}
                         className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left transition ${
                           isSelected
-                            ? 'bg-[#E53935]/10 shadow-[inset_0_0_0_1px_rgba(229,57,53,0.2)]'
-                            : 'bg-black/[0.03] hover:bg-black/[0.06]'
+                            ? 'bg-[#0EA5E9]/10 shadow-[inset_0_0_0_1px_rgba(14,165,233,0.2)]'
+                            : 'bg-[var(--overlay-subtle)] hover:bg-black/[0.06]'
                         }`}
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
                             <span className="truncate text-sm font-medium text-[var(--text-primary)]">{bus.number}</span>
                             <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
-                              bus.status === 'running' ? 'bg-[#E53935]' : bus.status === 'delayed' ? 'bg-[#FFB300]' : 'bg-[var(--text-muted)]'
+                              bus.status === 'running' ? 'bg-[#22C55E]' : bus.status === 'delayed' ? 'bg-[#F59E0B]' : 'bg-[var(--text-muted)]'
                             }`} />
                             {isFull && (
-                              <span className="rounded bg-[#E53935]/15 px-1.5 py-0.5 text-[9px] font-bold text-[#E53935]">
+                              <span className="rounded bg-[#0EA5E9]/15 px-1.5 py-0.5 text-[9px] font-bold text-[#0EA5E9]">
                                 {t('map.full')}
                               </span>
                             )}

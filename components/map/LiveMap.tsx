@@ -1,9 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import { useMemo, useCallback, useRef, useState } from 'react';
+import { GoogleMap, MarkerF, PolylineF, InfoWindowF, useJsApiLoader } from '@react-google-maps/api';
 import type { Bus, Route } from '@/lib/mock-data';
 
 interface LiveMapProps {
@@ -12,158 +10,165 @@ interface LiveMapProps {
   onBusSelect: (id: string) => void;
 }
 
-const defaultCenter: [number, number] = [13.0827, 80.2707];
-
-function MapInitializer({ onReady }: { onReady: (map: L.Map) => void }) {
-  const map = useMap();
-
-  useEffect(() => {
-    onReady(map);
-  }, [map, onReady]);
-
-  return null;
-}
+const defaultCenter = { lat: 13.0827, lng: 80.2707 };
+const containerStyle = { width: '100%', height: '100%' };
 
 function statusColor(status: Bus['status']) {
   if (status === 'delayed') return '#FFB300';
   if (status === 'stopped') return '#64748B';
-  return '#E53935';
-}
-
-function busSvg(color: string) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="${color}">
-    <path d="M4 16c0 .88.46 1.66 1.14 2.1l-.64 1.28c-.07.14-.07.3-.07.45V21c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h10v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1.17c0-.15-.02-.31-.07-.45l-.64-1.28A2.49 2.49 0 0 0 20 16H4zm15 1.5c0 .83-.67 1.5-1.5 1.5S16 18.33 16 17.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5zm-13 0c0 .83-.67 1.5-1.5 1.5S3 18.33 3 17.5 3.67 16 4.5 16 6 16.67 6 17.5zM19 12H5V5h14v7zM8 3h-.5C7.22 3 7 3.22 7 3.5V4H5V3.5C5 2.12 6.12 1 7.5 1h9C17.88 1 19 2.12 19 3.5V4h-2v-.5c0-.28-.22-.5-.5-.5H8z"/>
-  </svg>`;
-}
-
-function busIcon(bus: Bus) {
-  const color = statusColor(bus.status);
-  return L.divIcon({
-    className: 'tn-bustrack-marker',
-    html: `
-      <div class="tn-bustrack-marker__outer" style="background:${color};border:2px solid ${color};">
-        ${busSvg('#FFFFFF')}
-      </div>
-    `,
-    iconSize: [32, 32],
-    iconAnchor: [16, 16]
-  });
+  return '#22C55E';
 }
 
 const routeColors: Record<string, string> = {
-  TNSTC: '#E53935'
+  TNSTC: '#0EA5E9'
 };
 
 export default function LiveMap({ buses, routes, onBusSelect }: LiveMapProps) {
-  const [map, setMap] = useState<L.Map | null>(null);
+  const { isLoaded } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || ''
+  });
+
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const [selectedBus, setSelectedBus] = useState<Bus | null>(null);
   const [loaded, setLoaded] = useState(false);
 
-  const allPoints = useMemo(() => buses.map((bus) => [bus.latitude, bus.longitude] as [number, number]), [buses]);
+  const onLoad = useCallback((map: google.maps.Map) => {
+    mapRef.current = map;
+    setLoaded(true);
+  }, []);
 
-  useEffect(() => {
-    if (!map || !allPoints.length) return;
-    const bounds = L.latLngBounds(allPoints);
-    map.fitBounds(bounds.pad(0.18));
-  }, [allPoints, map]);
+  const onUnmount = useCallback(() => {
+    mapRef.current = null;
+  }, []);
 
-  const zoomMap = (direction: 'in' | 'out') => {
-    if (!map) return;
-    const currentZoom = map.getZoom() ?? 11;
-    map.setZoom(direction === 'in' ? currentZoom + 1 : currentZoom - 1);
+  const allPoints = useMemo(
+    () => buses.map((bus) => ({ lat: bus.latitude, lng: bus.longitude })),
+    [buses]
+  );
+
+  const fitBounds = () => {
+    if (!mapRef.current || !allPoints.length) return;
+    const bounds = new google.maps.LatLngBounds();
+    allPoints.forEach((p) => bounds.extend(p));
+    mapRef.current.fitBounds(bounds, 80);
   };
 
-  const focusAllBuses = () => {
-    if (!map || !allPoints.length) return;
-    map.fitBounds(L.latLngBounds(allPoints).pad(0.18));
+  const zoomMap = (dir: 'in' | 'out') => {
+    if (!mapRef.current) return;
+    mapRef.current.setZoom((mapRef.current.getZoom() || 11) + (dir === 'in' ? 1 : -1));
   };
+
+  if (!isLoaded) {
+    return (
+      <div className="grid h-[55vh] min-h-[350px] place-items-center rounded-3xl border border-[var(--border)] bg-white/80 text-sm text-[var(--text-secondary)]">
+        Loading Google Maps...
+      </div>
+    );
+  }
 
   return (
-    <div className="relative h-[55vh] min-h-[350px] overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--bg-primary)] p-4 shadow-lg shadow-[var(--shadow)] max-sm:min-h-[300px] max-sm:rounded-2xl">
-      <MapContainer
+    <div className="relative h-[55vh] min-h-[350px] overflow-hidden rounded-3xl border border-[var(--border)] bg-white/80 shadow-lg shadow-[var(--shadow-heavy)] max-sm:min-h-[300px] max-sm:rounded-2xl">
+      <GoogleMap
+        mapContainerStyle={containerStyle}
         center={defaultCenter}
         zoom={11}
-        className="h-full w-full rounded-3xl"
+        onLoad={onLoad}
+        onUnmount={onUnmount}
+        options={{
+          mapTypeId: 'roadmap',
+          streetViewControl: false,
+          mapTypeControl: false,
+          fullscreenControl: false,
+          styles: [
+            { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] }
+          ]
+        }}
       >
-        <MapInitializer
-          onReady={(instance) => {
-            setMap(instance);
-            setLoaded(true);
-          }}
-        />
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-
         {routes.map((route) => (
-          <Polyline
+          <PolylineF
             key={route.id}
-            positions={route.stops.map((stop) => [stop.lat, stop.lng] as [number, number])}
-            pathOptions={{
-              color: routeColors[route.operator] || '#E53935',
-              weight: 4,
-              opacity: 0.7
+            path={route.stops.map((s) => ({ lat: s.lat, lng: s.lng }))}
+            options={{
+              strokeColor: routeColors[route.operator] || '#0EA5E9',
+              strokeWeight: 4,
+              strokeOpacity: 0.7
             }}
           />
         ))}
 
         {buses.map((bus) => (
-          <Marker
+          <MarkerF
             key={bus.id}
-            position={[bus.latitude, bus.longitude]}
-            icon={busIcon(bus)}
-            eventHandlers={{ click: () => onBusSelect(bus.id) }}
-          >
-            <Popup>
-              <div className="space-y-1 text-sm">
-                <p className="font-semibold">{bus.number}</p>
-                <p>{bus.route.origin} → {bus.route.destination}</p>
-                <p>Status: {bus.status}</p>
-                <p>Speed: {bus.speed} km/h</p>
-                <p>Seats: {bus.seatsAvailable}/{bus.seatCapacity}</p>
-                <p>Passengers: {bus.passengersInside}</p>
-              </div>
-            </Popup>
-          </Marker>
+            position={{ lat: bus.latitude, lng: bus.longitude }}
+            icon={{
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 8,
+              fillColor: statusColor(bus.status),
+              fillOpacity: 1,
+              strokeColor: '#FFFFFF',
+              strokeWeight: 2
+            }}
+            onClick={() => {
+              setSelectedBus(bus);
+              onBusSelect(bus.id);
+            }}
+          />
         ))}
-      </MapContainer>
+
+        {selectedBus && (
+          <InfoWindowF
+            position={{ lat: selectedBus.latitude, lng: selectedBus.longitude }}
+            onCloseClick={() => setSelectedBus(null)}
+          >
+            <div className="space-y-1 text-sm">
+              <p className="font-semibold">{selectedBus.number}</p>
+              <p>{selectedBus.route.origin} &rarr; {selectedBus.route.destination}</p>
+              <p>Status: {selectedBus.status}</p>
+              <p>Speed: {selectedBus.speed} km/h</p>
+              <p>Seats: {selectedBus.seatsAvailable}/{selectedBus.seatCapacity}</p>
+              <p>Passengers: {selectedBus.passengersInside}</p>
+            </div>
+          </InfoWindowF>
+        )}
+      </GoogleMap>
 
       {!loaded && (
-        <div className="absolute inset-4 z-20 grid place-items-center rounded-3xl border border-[var(--border)] bg-[var(--bg-primary)]/85 text-center text-sm text-[var(--text-secondary)] backdrop-blur">
-          Loading OpenStreetMap...
+        <div className="absolute inset-4 z-20 grid place-items-center rounded-3xl border border-[var(--border)] bg-white/80 text-center text-sm text-[var(--text-secondary)] backdrop-blur">
+          Loading Google Maps...
         </div>
       )}
 
-      <div className="absolute left-6 top-6 z-30 flex flex-col gap-2 rounded-3xl border border-[var(--border)] bg-[var(--bg-elevated)] p-3 backdrop-blur">
+      <div className="absolute left-6 top-6 z-30 flex flex-col gap-2 rounded-3xl border border-[var(--border)] glass p-3">
         <button
           type="button"
           onClick={() => zoomMap('in')}
-          className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)]/90 px-4 py-3 text-sm font-semibold text-[var(--text-primary)] transition hover:border-[#E53935]/30 hover:text-[#E53935]"
+          className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)]/90 px-4 py-3 text-sm font-semibold text-[var(--text-primary)] transition hover:border-[#0EA5E9]/30 hover:text-[#0EA5E9]"
         >
           Zoom in
         </button>
         <button
           type="button"
           onClick={() => zoomMap('out')}
-          className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)]/90 px-4 py-3 text-sm font-semibold text-[var(--text-primary)] transition hover:border-[#E53935]/30 hover:text-[#E53935]"
+          className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)]/90 px-4 py-3 text-sm font-semibold text-[var(--text-primary)] transition hover:border-[#0EA5E9]/30 hover:text-[#0EA5E9]"
         >
           Zoom out
         </button>
         <button
           type="button"
-          onClick={focusAllBuses}
-          className="rounded-2xl border border-[#E53935]/30 bg-[#E53935]/10 px-4 py-3 text-sm font-semibold text-[#E53935] transition hover:bg-[#E53935]/20"
+          onClick={fitBounds}
+          className="rounded-2xl border border-[#0EA5E9]/30 bg-[#0EA5E9]/10 px-4 py-3 text-sm font-semibold text-[#0EA5E9] transition hover:bg-[#0EA5E9]/20"
         >
           Fit vehicles
         </button>
       </div>
 
-      <div className="absolute right-6 top-6 z-30 rounded-3xl border border-[var(--border)] bg-[var(--bg-elevated)] px-4 py-3 font-orbitron text-[10px] uppercase tracking-[0.25em] text-[var(--text-secondary)] backdrop-blur">
-        Live GPS markers
+      <div className="absolute right-6 top-6 z-30 rounded-3xl border border-[var(--border)] glass px-4 py-3 font-orbitron text-[10px] uppercase tracking-[0.25em] text-[var(--text-secondary)]">
+        Google Maps
       </div>
 
-      <div className="absolute bottom-6 left-6 z-30 flex flex-wrap gap-2 rounded-3xl border border-[var(--border)] bg-[var(--bg-elevated)] p-3 text-[10px] uppercase tracking-[0.22em] backdrop-blur">
-        <span className="rounded-full bg-[#E53935]/15 px-3 py-1 text-[#E53935]">Running</span>
+      <div className="absolute bottom-6 left-6 z-30 flex flex-wrap gap-2 rounded-3xl border border-[var(--border)] glass p-3 text-[10px] uppercase tracking-[0.22em]">
+        <span className="rounded-full bg-[#22C55E]/15 px-3 py-1 text-[#22C55E]">Running</span>
         <span className="rounded-full bg-[#FFB300]/15 px-3 py-1 text-[#FFB300]">Delayed</span>
         <span className="rounded-full bg-[#64748B]/20 px-3 py-1 text-[var(--text-secondary)]">Stopped</span>
       </div>

@@ -31,7 +31,8 @@ const memory = {
   buses: seed.buses.map((bus) => ({ ...bus, tickCount: 0 })),
   stops: seed.routes.flatMap((route) => route.stops.map((stop) => ({ ...stop, routeId: route.id }))),
   alerts: seed.alerts.map((alert) => ({ ...alert })),
-  users: []
+  users: [],
+  reports: []
 };
 
 function isDbReady() {
@@ -405,6 +406,78 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/me', authMiddleware, (req, res) => {
   res.json({ user: req.user });
+});
+
+// ESP32 sends passenger count (no GPS needed)
+app.post('/api/bus/passengers', async (req, res) => {
+  const { busId, passengersInside } = req.body || {};
+  if (!busId || passengersInside == null) {
+    return res.status(400).json({ error: 'busId and passengersInside are required' });
+  }
+
+  const bus = isDbReady()
+    ? await Bus.findById(busId)
+    : memory.buses.find((b) => String(b._id || b.id) === busId);
+
+  if (!bus) return res.status(404).json({ error: 'Bus not found' });
+
+  bus.passengersInside = clamp(Number(passengersInside), 0, bus.seatCapacity);
+  bus.seatsAvailable = bus.seatCapacity - bus.passengersInside;
+
+  if (isDbReady()) await bus.save();
+
+  const liveBuses = await getBusesData();
+  io.emit('bus-location-update', liveBuses);
+
+  res.json({ ok: true, receivedAt: new Date().toISOString() });
+});
+
+// Hardware ingest endpoint — ESP32 sends data here
+app.post('/api/bus/location', async (req, res) => {
+  const { busId, latitude, longitude, speed, seatsAvailable, passengersInside } = req.body || {};
+  if (!busId || latitude == null || longitude == null) {
+    return res.status(400).json({ error: 'busId, latitude, and longitude are required' });
+  }
+
+  const bus = isDbReady()
+    ? await Bus.findById(busId)
+    : memory.buses.find((b) => String(b._id || b.id) === busId);
+
+  if (!bus) return res.status(404).json({ error: 'Bus not found' });
+
+  const now = new Date();
+  bus.latitude = Number(latitude);
+  bus.longitude = Number(longitude);
+  bus.speed = speed != null ? Number(speed) : bus.speed;
+  bus.status = Number(speed) > 0 ? 'running' : 'stopped';
+
+  if (seatsAvailable != null) {
+    bus.seatsAvailable = clamp(Number(seatsAvailable), 0, bus.seatCapacity);
+    bus.passengersInside = bus.seatCapacity - bus.seatsAvailable;
+  }
+  if (passengersInside != null) {
+    bus.passengersInside = Number(passengersInside);
+    bus.seatsAvailable = bus.seatCapacity - bus.passengersInside;
+  }
+
+  if (isDbReady()) await bus.save();
+
+  const liveBuses = await getBusesData();
+  io.emit('bus-location-update', liveBuses);
+
+  res.json({ ok: true, receivedAt: now.toISOString() });
+});
+
+// Report endpoint — passengers report issues
+app.post('/api/report', (req, res) => {
+  const report = { id: `report-${Date.now()}`, ...req.body, reportedAt: new Date().toISOString() };
+  memory.reports.push(report);
+  io.emit('new-report', report);
+  res.status(201).json({ ok: true, id: report.id });
+});
+
+app.get('/api/report', (_req, res) => {
+  res.json(memory.reports.sort((a, b) => new Date(b.reportedAt).getTime() - new Date(a.reportedAt).getTime()));
 });
 
 io.on('connection', (socket) => {

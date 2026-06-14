@@ -2,7 +2,10 @@ import { createFavorite, getFavorites } from '@/server/routes/favorites';
 
 export async function GET() {
   return new Response(JSON.stringify(getFavorites()), {
-    headers: { 'Content-Type': 'application/json' }
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache'
+    }
   });
 }
 

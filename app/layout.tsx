@@ -3,22 +3,26 @@ import './globals.css';
 import Sidebar from '@/components/layout/Sidebar';
 import MobileNav from '@/components/layout/MobileNav';
 import PwaRegister from '@/components/PwaRegister';
+import { PanicButton } from '@/components/report/PanicButton';
 import { LanguageProvider } from '@/lib/LanguageContext';
 import { Space_Grotesk, Orbitron, JetBrains_Mono, Noto_Sans_Tamil } from 'next/font/google';
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],
-  variable: '--font-space-grotesk'
+  variable: '--font-space-grotesk',
+  display: 'swap'
 });
 
 const orbitron = Orbitron({
   subsets: ['latin'],
+  weight: ['500', '700'],
   variable: '--font-orbitron',
   display: 'swap'
 });
 
 const jetbrainsMono = JetBrains_Mono({
   subsets: ['latin'],
+  weight: ['400', '500'],
   variable: '--font-jetbrains',
   display: 'swap'
 });
@@ -45,7 +49,7 @@ export const metadata: Metadata = {
   icons: {
     icon: [{ url: '/icon-192.png', sizes: '192x192', type: 'image/png' }, { url: '/icon-512.png', sizes: '512x512', type: 'image/png' }, { url: '/icon.svg', type: 'image/svg+xml' }],
     apple: [{ url: '/icon-192.png', sizes: '192x192', type: 'image/png' }, { url: '/icon.svg', type: 'image/svg+xml' }],
-    other: [{ rel: 'mask-icon', url: '/icon.svg', color: '#E53935' }]
+    other: [{ rel: 'mask-icon', url: '/icon.svg', color: '#0EA5E9' }]
   }
 };
 
@@ -66,6 +70,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Sidebar />
             <MobileNav />
             <PwaRegister />
+            <PanicButton />
             <main className="min-h-screen min-h-dvh pb-20 pl-0 md:ml-80 md:pb-0 md:pl-0 lg:px-8">
               <div className="mx-auto max-w-7xl px-4 py-4 md:px-6 md:py-6">
                 {children}

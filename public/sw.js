@@ -1,15 +1,19 @@
-const CACHE = 'tn-bustrack-v1';
-const PRECACHE = ['/', '/manifest.json', '/icon.svg', '/offline'];
+const CACHE = 'tn-bustrack-v3';
+const PRECACHE = ['/', '/offline', '/nearby', '/manifest.json', '/icon.svg', '/icon-192.png', '/icon-512.png', '/offline.html'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(PRECACHE)).then(() => self.skipWaiting())
+    caches.open(CACHE)
+      .then((cache) => cache.addAll(PRECACHE).catch(() => {}))
+      .then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE && !k.endsWith('-tiles')).map((k) => caches.delete(k)))
+    ).then(() => self.clients.claim())
   );
 });
 
@@ -19,7 +23,9 @@ self.addEventListener('fetch', (event) => {
 
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request).catch(() => caches.match('/offline').then((r) => r || caches.match('/')))
+      fetch(request).catch(() =>
+        caches.match('/offline.html').then((r) => r || new Response('Offline', { status: 200 }))
+      )
     );
     return;
   }
@@ -27,30 +33,30 @@ self.addEventListener('fetch', (event) => {
   if (url.origin === self.location.origin) {
     event.respondWith(
       caches.match(request).then((cached) => {
-        const fetchAndCache = fetch(request).then((response) => {
+        if (cached) return cached;
+        return fetch(request).then((response) => {
           if (response && response.status === 200) {
             const clone = response.clone();
             caches.open(CACHE).then((cache) => cache.put(request, clone));
           }
           return response;
         });
-        return cached || fetchAndCache;
       })
     );
     return;
   }
 
-  if (url.hostname === 'tile.openstreetmap.org' || url.hostname === 'unpkg.com' || url.hostname === 'cdnjs.cloudflare.com') {
+  if (['tile.openstreetmap.org', 'unpkg.com', 'cdnjs.cloudflare.com'].includes(url.hostname)) {
     event.respondWith(
       caches.match(request).then((cached) => {
-        const fetchAndCache = fetch(request).then((response) => {
+        if (cached) return cached;
+        return fetch(request).then((response) => {
           if (response && response.status === 200) {
             const clone = response.clone();
             caches.open(CACHE + '-tiles').then((cache) => cache.put(request, clone));
           }
           return response;
         });
-        return cached || fetchAndCache;
       })
     );
     return;

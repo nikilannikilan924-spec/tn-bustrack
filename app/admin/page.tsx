@@ -1,16 +1,21 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { getMockDashboardData, type Bus } from '@/lib/mock-data';
 import { subscribeBusLocationUpdate } from '@/lib/socket';
 import { useLanguage } from '@/lib/LanguageContext';
 import { AdminStatCard } from '@/components/admin/AdminStatCard';
-import { AdminActivityFeed } from '@/components/admin/AdminActivityFeed';
-import { AdminBusTable } from '@/components/admin/AdminBusTable';
+import { AdminMapPreview } from '@/components/admin/AdminMapPreview';
+import { AdminAlertPanel } from '@/components/admin/AdminAlertPanel';
+import { AdminReportPanel } from '@/components/admin/AdminReportPanel';
+
+const AdminActivityFeed = dynamic(() => import('@/components/admin/AdminActivityFeed').then(m => ({ default: m.AdminActivityFeed })), { ssr: false });
+const AdminBusTable = dynamic(() => import('@/components/admin/AdminBusTable').then(m => ({ default: m.AdminBusTable })), { ssr: false });
 
 export default function AdminDashboard() {
   const { t } = useLanguage();
-  const { buses: seedBuses, routes, alerts } = getMockDashboardData();
+  const { buses: seedBuses, routes, alerts } = useMemo(() => getMockDashboardData(), []);
   const [buses, setBuses] = useState<Bus[]>(seedBuses);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [time, setTime] = useState(new Date());
@@ -46,7 +51,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="radar-grid min-h-screen">
-      {/* ── TOP NAVBAR ── */}
       <header className="glass-nav fixed left-0 right-0 top-0 z-50 flex h-16 items-center justify-between border-b border-red-500/20 px-6">
         <div className="flex items-center gap-4">
           <button
@@ -59,7 +63,7 @@ export default function AdminDashboard() {
           </button>
           <div className="flex items-center gap-3">
             <svg viewBox="0 0 40 40" className="h-8 w-8">
-              <path d="M20 2L4 12v16l16 10 16-10V12L20 2z" fill="#E53935" />
+              <path d="M20 2L4 12v16l16 10 16-10V12L20 2z" fill="#0EA5E9" />
               <path d="M20 6L8 14v12l12 8 12-8V14L20 6z" fill="#FFB300" />
               <circle cx="20" cy="20" r="4" fill="#0A0F1E" />
             </svg>
@@ -92,7 +96,6 @@ export default function AdminDashboard() {
         </div>
       </header>
 
-      {/* ── SIDEBAR ── */}
       <aside
         className={`fixed left-0 top-16 z-40 h-[calc(100vh-64px)] border-r border-white/5 bg-[#111827] transition-all duration-300 ${
           sidebarOpen ? 'w-56' : 'w-16'
@@ -139,14 +142,12 @@ export default function AdminDashboard() {
         )}
       </aside>
 
-      {/* ── MAIN CONTENT ── */}
       <main
         className={`min-h-screen pt-16 transition-all duration-300 ${
           sidebarOpen ? 'pl-56' : 'pl-16'
         }`}
       >
         <div className="p-6">
-          {/* Page title */}
           <div className="mb-8">
             <h2 className="font-orbitron text-2xl font-bold uppercase tracking-[0.1em] text-[#F0F4FF]">
               Command Center
@@ -156,142 +157,25 @@ export default function AdminDashboard() {
               <span className="mx-2 inline-block h-3 w-px bg-[#8892A4]/30" />
               <span className="font-tamil text-xs">தமிழ்நாடு பேருந்து வலையமைப்பு</span>
             </p>
-            <div className="mt-3 h-0.5 w-24 rounded-full bg-red-500 shadow-[0_0_12px_rgba(229,57,53,0.5)]" />
+            <div className="mt-3 h-0.5 w-24 rounded-full bg-[#0EA5E9] shadow-[0_0_12px_rgba(14,165,233,0.5)]" />
           </div>
 
-          {/* ROW 1 — Stat cards */}
           <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <AdminStatCard
-              icon="🚌"
-              value={activeBuses}
-              label="Buses Active"
-              trend="3 from yesterday"
-              trendUp
-              accent="teal"
-              subtext="LIVE"
-            />
-            <AdminStatCard
-              icon="👥"
-              value={totalPassengers}
-              label="Today's Passengers"
-              trend="8% from yesterday"
-              trendUp
-              accent="gold"
-              suffix=""
-            />
-            <AdminStatCard
-              icon="⚠️"
-              value={delayedBuses.length}
-              label="Buses Delayed"
-              trend={delayedBuses.map((b) => b.route.number).join(', ') || 'None'}
-              trendUp={false}
-              accent="red"
-              subtext={delayedBuses.length ? 'ACTION NEEDED' : undefined}
-            />
-            <AdminStatCard
-              icon="💺"
-              value={avgSeatsPct}
-              label="Seats Available"
-              trend="Network average"
-              trendUp
-              accent="green"
-              suffix="%"
-            />
+            <AdminStatCard icon="🚌" value={activeBuses} label="Buses Active" trend="3 from yesterday" trendUp accent="teal" subtext="LIVE" />
+            <AdminStatCard icon="👥" value={totalPassengers} label="Today's Passengers" trend="8% from yesterday" trendUp accent="gold" suffix="" />
+            <AdminStatCard icon="⚠️" value={delayedBuses.length} label="Buses Delayed" trend={delayedBuses.map((b) => b.route.number).join(', ') || 'None'} trendUp={false} accent="blue" subtext={delayedBuses.length ? 'ACTION NEEDED' : undefined} />
+            <AdminStatCard icon="💺" value={avgSeatsPct} label="Seats Available" trend="Network average" trendUp accent="green" suffix="%" />
           </div>
 
-          {/* ROW 2 — Map + Activity */}
           <div className="mb-6 grid gap-6 xl:grid-cols-[1.5fr_1fr]">
-            {/* Map preview */}
-            <div className="rounded-2xl border border-white/5 bg-[#1A2235] p-5">
-              <div className="mb-4 flex items-center gap-2">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-green-400" />
-                <h3 className="font-orbitron text-xs font-semibold uppercase tracking-[0.2em] text-[#F0F4FF]">
-                  Live Bus Positions
-                </h3>
-                <span className="ml-auto font-jetbrains text-[10px] text-[#8892A4]">
-                  Refreshing every 5s
-                </span>
-              </div>
-              <div className="relative flex h-[320px] items-center justify-center overflow-hidden rounded-xl bg-[#0A0F1E]">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="relative h-full w-full">
-                    <img
-                      src={`https://cartodb-basemaps-a.global.ssl.fastly.net/dark_matter/10/550/375.png`}
-                      alt="Map"
-                      className="h-full w-full object-cover opacity-40"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#1A2235] via-transparent to-transparent" />
-                    {/* Bus dots overlay */}
-                    {buses.map((bus) => (
-                      <div
-                        key={bus.id}
-                        className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full"
-                        style={{
-                          left: `${((bus.longitude + 180) / 360) * 100}%`,
-                          top: `${((90 - bus.latitude) / 180) * 100}%`,
-                          background: bus.status === 'running' ? '#00BCD4' : bus.status === 'delayed' ? '#E53935' : '#FFB300',
-                          boxShadow: `0 0 8px ${bus.status === 'running' ? 'rgba(0,188,212,0.7)' : bus.status === 'delayed' ? 'rgba(229,57,53,0.7)' : 'rgba(255,179,0,0.7)'}`,
-                          animation: bus.status === 'running' ? 'pulse-dot 2s infinite' : 'none'
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <p className="relative z-10 text-xs text-[#8892A4]">
-                  {buses.length} buses • {routes.length} routes
-                </p>
-              </div>
-            </div>
-
-            {/* Activity feed */}
+            <AdminMapPreview buses={buses} routesCount={routes.length} />
             <AdminActivityFeed />
           </div>
 
-          {/* ROW 3 — Bus Table + Charts */}
-          <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
+          <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr_1fr]">
             <AdminBusTable />
-
-            {/* Alerts panel */}
-            <div className="rounded-2xl border border-white/5 bg-[#1A2235] p-5">
-              <div className="mb-4 flex items-center gap-2">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
-                <h3 className="font-orbitron text-xs font-semibold uppercase tracking-[0.2em] text-[#F0F4FF]">Active Alerts</h3>
-              </div>
-              <div className="space-y-2">
-                {alerts.slice(0, 4).map((alert) => (
-                  <div
-                    key={alert.id}
-                    className="rounded-xl border border-white/5 bg-[#111827] p-3 transition hover:bg-[#0A0F1E]"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`h-1.5 w-1.5 rounded-full ${
-                          alert.severity === 'CRITICAL'
-                            ? 'bg-red-500'
-                            : alert.severity === 'WARNING'
-                              ? 'bg-yellow-400'
-                              : 'bg-cyan-400'
-                        }`}
-                      />
-                      <span className="text-xs font-semibold uppercase tracking-wider text-[#8892A4]">
-                        {alert.severity}
-                      </span>
-                      <span className="ml-auto font-jetbrains text-[10px] text-[#8892A4]">
-                        {new Date(alert.createdAt).toLocaleTimeString('en-IN', { hour12: false })}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-sm font-medium text-[#F0F4FF]">{alert.title}</p>
-                    <p className="mt-0.5 text-xs text-[#8892A4]">{alert.message}</p>
-                  </div>
-                ))}
-                <a
-                  href="/alerts"
-                  className="mt-2 block rounded-xl border border-dashed border-white/10 bg-transparent py-2 text-center text-xs font-medium text-[#8892A4] transition hover:border-cyan-400/30 hover:text-cyan-400"
-                >
-                  View all alerts →
-                </a>
-              </div>
-            </div>
+            <AdminAlertPanel alerts={alerts} />
+            <AdminReportPanel />
           </div>
         </div>
       </main>

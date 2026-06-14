@@ -107,3 +107,11 @@ export async function updateUser(id: string, payload: Record<string, unknown>) {
 export async function deleteUser(id: string) {
   return request(`/api/users/${id}`, { method: 'DELETE' });
 }
+
+export async function submitReport(payload: Record<string, unknown>) {
+  return request('/api/report', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export async function fetchReports() {
+  return request('/api/report');
+}

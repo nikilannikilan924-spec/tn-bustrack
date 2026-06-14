@@ -10,19 +10,18 @@ export default function AlertsPage() {
 
   return (
     <div className="space-y-5 pb-28 max-sm:space-y-4">
-      <div className="relative overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--bg-elevated)] p-6 shadow-lg shadow-[var(--shadow)] backdrop-blur max-sm:rounded-2xl max-sm:p-5">
-        <div className="pointer-events-none absolute -right-16 -top-16 h-52 w-52 rounded-full bg-[#FFB300]/8 blur-[80px]" />
-        <div className="relative">
-          <p className="font-orbitron text-[10px] uppercase tracking-[0.3em] text-[#FFB300]">{t('alerts.title')}</p>
-          <h1 className="mt-2 text-2xl font-semibold text-[var(--text-primary)] max-sm:text-xl">{t('alerts.heading')}</h1>
-          <p className="mt-2 text-sm text-[var(--text-secondary)]">{t('alerts.subtitle')}</p>
+      <div className="gradient-header rounded-3xl p-6 shadow-lg shadow-[var(--shadow-heavy)] max-sm:rounded-2xl max-sm:p-5">
+        <div className="gradient-header-text">
+          <p className="font-orbitron text-[10px] uppercase tracking-[0.3em] text-white/60">{t('alerts.title')}</p>
+          <h1 className="mt-2 text-2xl font-bold text-white max-sm:text-xl">{t('alerts.heading')}</h1>
+          <p className="mt-2 text-sm text-white/70">{t('alerts.subtitle')}</p>
         </div>
       </div>
       <div className="grid gap-4">
         {alerts.length ? (
           alerts.map((alert) => <AlertCard key={alert.id} alert={alert} />)
         ) : (
-          <div className="rounded-3xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-secondary)]/50 p-8 text-center max-sm:p-6">
+          <div className="rounded-3xl border border-dashed border-[var(--border-subtle)] bg-white/50 p-8 text-center max-sm:p-6 backdrop-blur">
             <p className="text-sm text-[var(--text-secondary)]">{t('alerts.empty')}</p>
           </div>
         )}

@@ -8,7 +8,7 @@ interface AdminStatCardProps {
   label: string;
   trend?: string;
   trendUp?: boolean;
-  accent: 'red' | 'teal' | 'gold' | 'green';
+  accent: 'blue' | 'teal' | 'gold' | 'green';
   suffix?: string;
   subtext?: string;
 }
@@ -37,14 +37,14 @@ export function AdminStatCard({ icon, value, label, trend, trendUp, accent, suff
   }, [value]);
 
   const borderColor = {
-    red: 'border-red-500/30',
+    blue: 'border-[#0EA5E9]/30',
     teal: 'border-cyan-400/30',
     gold: 'border-yellow-400/30',
     green: 'border-green-400/30'
   }[accent];
 
   const shadowColor = {
-    red: 'rgba(229,57,53,0.15)',
+    blue: 'rgba(14,165,233,0.15)',
     teal: 'rgba(0,188,212,0.15)',
     gold: 'rgba(255,179,0,0.12)',
     green: 'rgba(0,230,118,0.12)'

@@ -9,11 +9,11 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 
 const styles = {
   primary:
-    'inline-flex items-center justify-center rounded-2xl bg-[#E53935] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#C62828] shadow-[0_0_24px_rgba(229,57,53,0.3)] hover:shadow-[0_0_32px_rgba(229,57,53,0.5)]',
+    'inline-flex items-center justify-center rounded-2xl bg-[#0EA5E9] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#0369A1] shadow-[0_0_24px_rgba(14,165,233,0.3)] hover:shadow-[0_0_32px_rgba(14,165,233,0.5)]',
   ghost:
-    'inline-flex items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/80 px-5 py-3 text-sm font-semibold text-[var(--text-secondary)] transition hover:border-[#E53935]/30 hover:bg-[var(--bg-card)] hover:text-[var(--text-primary)]',
+    'inline-flex items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/80 px-5 py-3 text-sm font-semibold text-[var(--text-secondary)] transition hover:border-[#0EA5E9]/30 hover:bg-[var(--bg-card)] hover:text-[var(--text-primary)]',
   outline:
-    'inline-flex items-center justify-center rounded-2xl border border-[#E53935]/40 px-5 py-3 text-sm font-semibold text-[#E53935] transition hover:bg-[#E53935]/10 hover:border-[#E53935]'
+    'inline-flex items-center justify-center rounded-2xl border border-[#0EA5E9]/40 px-5 py-3 text-sm font-semibold text-[#0EA5E9] transition hover:bg-[#0EA5E9]/10 hover:border-[#0EA5E9]'
 };
 
 export function Button({ href, variant = 'primary', size = 'default', className = '', children, ...props }: ButtonProps) {
