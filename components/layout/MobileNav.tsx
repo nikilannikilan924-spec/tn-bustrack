@@ -5,12 +5,12 @@ import { usePathname } from 'next/navigation';
 import { useLanguage } from '@/lib/LanguageContext';
 
 const links: { href: string; key: string; icon: string }[] = [
+  { href: '/', key: 'app.name', icon: '🏠' },
   { href: '/dashboard', key: 'nav.buses', icon: '🚌' },
   { href: '/nearby', key: 'nav.nearby', icon: '📡' },
-  { href: '/stops', key: 'nav.stops', icon: '📍' },
   { href: '/map', key: 'nav.map', icon: '🗺️' },
-  { href: '/favorites', key: 'nav.saved', icon: '⭐' },
-  { href: '/alerts', key: 'nav.alerts', icon: '🔔' }
+  { href: '/alerts', key: 'nav.alerts', icon: '🔔' },
+  { href: '/how', key: 'nav.how', icon: '❓' }
 ];
 
 export default function MobileNav() {

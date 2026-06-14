@@ -12,6 +12,7 @@ export const translations: Record<string, { en: string; ta: string }> = {
   'nav.alerts': { en: 'Alerts', ta: 'எச்சரிக்கைகள்' },
   'nav.settings': { en: 'Settings', ta: 'அமைப்புகள்' },
   'nav.stops': { en: 'Stops', ta: 'நிறுத்தங்கள்' },
+  'nav.how': { en: 'How to Use', ta: 'எப்படி பயன்படுத்துவது' },
 
   'home.title': { en: 'Tamil Nadu smart bus tracking.', ta: 'தமிழ்நாடு ஸ்மார்ட் பஸ் கண்காணிப்பு.' },
   'home.subtitle': { en: 'Monitor live vehicles, routes, alerts, and saved trips from a single responsive dashboard.', ta: 'நேரலை வாகனங்கள், வழித்தடங்கள், எச்சரிக்கைகள் மற்றும் சேமித்த பயணங்களை ஒரே டாஷ்போர்டில் கண்காணிக்கவும்.' },
