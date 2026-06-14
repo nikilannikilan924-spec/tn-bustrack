@@ -14,6 +14,7 @@ const links: { href: string; key: string; icon: string }[] = [
   { href: '/stops', key: 'nav.stops', icon: '📍' },
   { href: '/favorites', key: 'nav.saved', icon: '⭐' },
   { href: '/alerts', key: 'nav.alerts', icon: '🔔' },
+  { href: '/setup', key: 'nav.setup', icon: '⚙️' },
   { href: '/how', key: 'nav.how', icon: '❓' }
 ];
 

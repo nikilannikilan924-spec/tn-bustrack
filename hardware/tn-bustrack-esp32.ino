@@ -2,11 +2,11 @@
 #include <HTTPClient.h>
 
 // WiFi credentials
-const char* ssid = "YOUR_HOTSPOT_NAME";
-const char* password = "YOUR_HOTSPOT_PASSWORD";
+const char* ssid = "No Hotspot";
+const char* password = "31313131";
 
-// Server URL - use your ngrok URL
-const char* serverUrl = "https://YOUR_NGROK.ngrok-free.app/api/bus/passengers";
+// Server URL - Railway deployment
+const char* serverUrl = "https://tn-bustrack-production.up.railway.app/api/bus/passengers";
 
 // Bus ID from seed data
 const char* busId = "bus-828-1";

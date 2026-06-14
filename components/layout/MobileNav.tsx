@@ -10,7 +10,8 @@ const links: { href: string; key: string; icon: string }[] = [
   { href: '/nearby', key: 'nav.nearby', icon: '📡' },
   { href: '/map', key: 'nav.map', icon: '🗺️' },
   { href: '/alerts', key: 'nav.alerts', icon: '🔔' },
-  { href: '/how', key: 'nav.how', icon: '❓' }
+  { href: '/how', key: 'nav.how', icon: '❓' },
+  { href: '/setup', key: 'nav.setup', icon: '⚙️' }
 ];
 
 export default function MobileNav() {
