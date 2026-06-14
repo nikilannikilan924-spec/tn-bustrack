@@ -3,12 +3,17 @@
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { useLanguage } from '@/lib/LanguageContext';
+import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 
 export default function HomePage() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
 
   return (
     <div className="space-y-6 max-sm:space-y-4 pt-4 max-sm:pt-2">
+      <div className="flex justify-end">
+        <LanguageSwitcher />
+      </div>
+
       <section className="relative overflow-hidden rounded-3xl bg-white/80 p-6 shadow-lg shadow-[var(--shadow-heavy)] backdrop-blur-xl max-sm:rounded-2xl max-sm:p-5 sm:p-12">
         <div className="pointer-events-none absolute -right-20 -top-20 h-72 w-72 rounded-full bg-[#0EA5E9]/10 blur-[100px] max-sm:hidden" />
         <div className="pointer-events-none absolute -bottom-20 -left-20 h-60 w-60 rounded-full bg-[#FFB300]/10 blur-[80px] max-sm:hidden" />

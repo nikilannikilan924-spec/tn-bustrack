@@ -15,7 +15,7 @@ export const translations: Record<string, { en: string; ta: string }> = {
 
   'home.title': { en: 'Tamil Nadu smart bus tracking.', ta: 'தமிழ்நாடு ஸ்மார்ட் பஸ் கண்காணிப்பு.' },
   'home.subtitle': { en: 'Monitor live vehicles, routes, alerts, and saved trips from a single responsive dashboard.', ta: 'நேரலை வாகனங்கள், வழித்தடங்கள், எச்சரிக்கைகள் மற்றும் சேமித்த பயணங்களை ஒரே டாஷ்போர்டில் கண்காணிக்கவும்.' },
-  'home.tamilSubtitle': { en: 'தமிழ்நாடு நகர பேருந்துகளுக்கான live GPS dashboard', ta: 'தமிழ்நாடு நகர பேருந்துகளுக்கான நேரலை GPS டாஷ்போர்டு' },
+  'home.tamilSubtitle': { en: 'Live GPS dashboard for Tamil Nadu city buses', ta: 'தமிழ்நாடு நகர பேருந்துகளுக்கான நேரலை GPS டாஷ்போர்டு' },
   'home.openBuses': { en: 'Open Buses', ta: 'பேருந்துகளை திற' },
   'home.liveMap': { en: 'Live Map', ta: 'நேரலை வரைபடம்' },
 
@@ -77,7 +77,7 @@ export const translations: Record<string, { en: string; ta: string }> = {
   'bus.currentStop': { en: 'Current stop', ta: 'தற்போதைய நிறுத்தம்' },
 
   'map.view': { en: 'Map View', ta: 'வரைபட காட்சி' },
-  'map.title': { en: 'OpenStreetMap live operations', ta: 'OpenStreetMap நேரலை செயல்பாடுகள்' },
+  'map.title': { en: 'Google Maps live operations', ta: 'Google Maps நேரலை செயல்பாடுகள்' },
   'map.subtitle': { en: 'Animated bus markers move every few seconds across Chennai and long-distance routes.', ta: 'அசைவூட்ட பஸ் குறிப்பிகள் ஒவ்வொரு சில வினாடிகளிலும் சென்னை மற்றும் தொலைதூர வழித்தடங்களில் நகரும்.' },
   'map.vehicles': { en: 'Vehicles', ta: 'வாகனங்கள்' },
   'map.running': { en: 'Running', ta: 'இயக்கத்தில்' },
