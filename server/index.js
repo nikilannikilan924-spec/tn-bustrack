@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const express = require('express');
 const http = require('http');
+const https = require('https');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
@@ -185,6 +186,9 @@ async function tickBuses() {
   if (isDbReady()) {
     const buses = await Bus.find();
     for (const bus of buses) {
+      // Skip simulation for real ESP32 buses (has received GPS data)
+      if (bus.lastRealUpdate) continue;
+
       const route = routeMap.get(bus.routeId);
       if (!route?.stops?.length) continue;
       const path = buildPath(route.stops);
@@ -211,6 +215,9 @@ async function tickBuses() {
 
   for (let index = 0; index < memory.buses.length; index += 1) {
     const bus = memory.buses[index];
+    // Skip simulation for real ESP32 buses
+    if (bus.lastRealUpdate) continue;
+
     const route = routeMap.get(bus.routeId);
     if (!route?.stops?.length) continue;
     const path = buildPath(route.stops);
@@ -256,6 +263,21 @@ async function deleteResource(model, memoryKey, id) {
   const index = items.findIndex((item) => String(item._id || item.id) === id);
   if (index === -1) return null;
   return items.splice(index, 1)[0];
+}
+
+// Reverse geocode lat/lng to place name via Nominatim
+function reverseGeocode(lat, lng, callback) {
+  const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&accept-language=ta`;
+  https.get(url, { headers: { 'User-Agent': 'TN-BusTrack/1.0' } }, (res) => {
+    let data = '';
+    res.on('data', (chunk) => data += chunk);
+    res.on('end', () => {
+      try {
+        const json = JSON.parse(data);
+        callback(json.display_name || json.name || '');
+      } catch { callback(''); }
+    });
+  }).on('error', () => callback(''));
 }
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'TN BusTrack API' }));
@@ -408,6 +430,36 @@ app.get('/api/me', authMiddleware, (req, res) => {
   res.json({ user: req.user });
 });
 
+// ESP32 fetches its assigned route config
+app.get('/api/device/config', async (_req, res) => {
+  const buses = await getBusesData();
+  const bus = buses[0];
+  if (!bus) return res.json({ configured: false, message: 'No bus found. Use /setup to create one.' });
+  const route = bus.route || null;
+  res.json({
+    configured: true,
+    bus: {
+      id: bus._id || bus.id,
+      number: bus.number,
+      seatCapacity: bus.seatCapacity,
+      latitude: bus.latitude,
+      longitude: bus.longitude,
+      status: bus.status
+    },
+    route: route ? {
+      id: route._id || route.id,
+      origin: route.origin,
+      destination: route.destination,
+      stops: (route.stops || []).map((s: any) => ({
+        name: s.name,
+        lat: s.lat,
+        lng: s.lng,
+        sequence: s.sequence
+      }))
+    } : null
+  });
+});
+
 // ESP32 sends passenger count (no GPS needed)
 app.post('/api/bus/passengers', async (req, res) => {
   const { busId, passengersInside } = req.body || {};
@@ -423,6 +475,7 @@ app.post('/api/bus/passengers', async (req, res) => {
 
   bus.passengersInside = clamp(Number(passengersInside), 0, bus.seatCapacity);
   bus.seatsAvailable = bus.seatCapacity - bus.passengersInside;
+  bus.lastRealUpdate = new Date().toISOString();
 
   if (isDbReady()) await bus.save();
 
@@ -459,6 +512,16 @@ app.post('/api/bus/location', async (req, res) => {
     bus.passengersInside = Number(passengersInside);
     bus.seatsAvailable = bus.seatCapacity - bus.passengersInside;
   }
+
+  bus.lastRealUpdate = now.toISOString();
+
+  // Reverse geocode for place name (non-blocking)
+  reverseGeocode(bus.latitude, bus.longitude, (place) => {
+    if (place) {
+      bus.currentPlace = place;
+      io.emit('bus-location-update', null); // trigger refresh
+    }
+  });
 
   if (isDbReady()) await bus.save();
 

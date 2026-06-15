@@ -19,8 +19,7 @@
     "jsx": "preserve",
     "incremental": true,
     "types": [
-      "node",
-      "google.maps"
+      "node"
     ],
     "baseUrl": ".",
     "paths": {

@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
 import { useLanguage } from '@/lib/LanguageContext';
+import { MapIcon, NearbyIcon, PinIcon } from '@/components/ui/Icons';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 import { getMockDashboardData, type Bus } from '@/lib/mock-data';
 import { subscribeBusLocationUpdate } from '@/lib/socket';
@@ -21,10 +21,6 @@ export default function HomePage() {
     return unsub;
   }, []);
 
-  const running = buses.filter((b) => b.status === 'running').length;
-  const delayed = buses.filter((b) => b.status === 'delayed').length;
-  const stopped = buses.filter((b) => b.status === 'stopped').length;
-  const totalSeats = buses.reduce((s, b) => s + b.seatsAvailable, 0);
   const recentAlerts = alerts.slice(0, 3);
 
   return (
@@ -64,17 +60,10 @@ export default function HomePage() {
         </div>
       </section>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Card title={lang === 'ta' ? 'இயக்கத்தில்' : 'Running'} value={String(running)} glow="teal" />
-        <Card title={lang === 'ta' ? 'தாமதம்' : 'Delayed'} value={String(delayed)} glow="amber" />
-        <Card title={lang === 'ta' ? 'நிறுத்தப்பட்டது' : 'Stopped'} value={String(stopped)} />
-        <Card title={lang === 'ta' ? 'காலி இருக்கைகள்' : 'Free Seats'} value={String(totalSeats)} glow="blue" />
-      </div>
-
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <a href="/map" className="glass group rounded-3xl p-6 shadow-lg transition hover:shadow-xl">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0EA5E9]/10 text-2xl">
-            🗺️
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0EA5E9]/10 text-[#0EA5E9]">
+            <MapIcon size={24} />
           </div>
           <h3 className="mt-4 font-semibold text-[var(--text-primary)] group-hover:text-[#0EA5E9]">
             {t('map.title')}
@@ -85,8 +74,8 @@ export default function HomePage() {
         </a>
 
         <a href="/nearby" className="glass group rounded-3xl p-6 shadow-lg transition hover:shadow-xl">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#00BCD4]/10 text-2xl">
-            📡
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#00BCD4]/10 text-[#00BCD4]">
+            <NearbyIcon size={24} />
           </div>
           <h3 className="mt-4 font-semibold text-[var(--text-primary)] group-hover:text-[#00BCD4]">
             {t('nearby.title')}
@@ -97,8 +86,8 @@ export default function HomePage() {
         </a>
 
         <a href="/stops" className="glass group rounded-3xl p-6 shadow-lg transition hover:shadow-xl">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#22C55E]/10 text-2xl">
-            📍
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#22C55E]/10 text-[#22C55E]">
+            <PinIcon size={24} />
           </div>
           <h3 className="mt-4 font-semibold text-[var(--text-primary)] group-hover:text-[#22C55E]">
             {t('stops.title')}

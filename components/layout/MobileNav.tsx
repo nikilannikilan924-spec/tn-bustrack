@@ -3,15 +3,26 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useLanguage } from '@/lib/LanguageContext';
+import { HomeIcon, BusIcon, NearbyIcon, MapIcon, BellIcon, HelpIcon, GearIcon } from '@/components/ui/Icons';
 
-const links: { href: string; key: string; icon: string }[] = [
-  { href: '/', key: 'app.name', icon: '🏠' },
-  { href: '/dashboard', key: 'nav.buses', icon: '🚌' },
-  { href: '/nearby', key: 'nav.nearby', icon: '📡' },
-  { href: '/map', key: 'nav.map', icon: '🗺️' },
-  { href: '/alerts', key: 'nav.alerts', icon: '🔔' },
-  { href: '/how', key: 'nav.how', icon: '❓' },
-  { href: '/setup', key: 'nav.setup', icon: '⚙️' }
+const iconMap: Record<string, React.ReactNode> = {
+  '/': <HomeIcon size={18} />,
+  '/dashboard': <BusIcon size={18} />,
+  '/nearby': <NearbyIcon size={18} />,
+  '/map': <MapIcon size={18} />,
+  '/alerts': <BellIcon size={18} />,
+  '/how': <HelpIcon size={18} />,
+  '/setup': <GearIcon size={18} />
+};
+
+const links: { href: string; key: string }[] = [
+  { href: '/', key: 'app.name' },
+  { href: '/dashboard', key: 'nav.buses' },
+  { href: '/nearby', key: 'nav.nearby' },
+  { href: '/map', key: 'nav.map' },
+  { href: '/alerts', key: 'nav.alerts' },
+  { href: '/how', key: 'nav.how' },
+  { href: '/setup', key: 'nav.setup' }
 ];
 
 export default function MobileNav() {
@@ -34,7 +45,7 @@ export default function MobileNav() {
                     : 'nav-inactive'
                 }`}
               >
-                <span className={`text-lg ${isActive ? 'drop-shadow-sm' : ''}`}>{link.icon}</span>
+                <span className={isActive ? 'drop-shadow-sm' : ''}>{iconMap[link.href]}</span>
                 <span>{t(link.key)}</span>
               </Link>
             );

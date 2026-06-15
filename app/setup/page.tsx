@@ -18,8 +18,10 @@ export default function SetupPage() {
   const [destination, setDestination] = useState('');
   const [seatCapacity, setSeatCapacity] = useState('50');
   const [stops, setStops] = useState<Stop[]>([{ name: '', lat: '', lng: '' }]);
+  const [bulkText, setBulkText] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [savedBusId, setSavedBusId] = useState('');
 
   const addStop = () => setStops([...stops, { name: '', lat: '', lng: '' }]);
   const removeStop = (i: number) => {
@@ -29,6 +31,24 @@ export default function SetupPage() {
     const s = [...stops];
     s[i][field] = value;
     setStops(s);
+  };
+
+  const importBulk = () => {
+    const lines = bulkText.trim().split('\n').filter(Boolean);
+    const parsed: Stop[] = [];
+    for (const line of lines) {
+      const parts = line.split(',').map(s => s.trim());
+      if (parts.length >= 3 && parts[0] && parts[1] && parts[2]) {
+        parsed.push({ name: parts[0], lat: parts[1], lng: parts[2] });
+      }
+    }
+    if (parsed.length) {
+      setStops(parsed);
+      setBulkText('');
+      setMessage(lang === 'ta' ? `${parsed.length} நிறுத்தங்கள் இறக்குமதி செய்யப்பட்டன` : `${parsed.length} stops imported`);
+    } else {
+      setMessage(lang === 'ta' ? 'எதுவும் இறக்குமதி செய்யப்படவில்லை. வடிவமைப்பைச் சரிபார்க்கவும்: பெயர், அட்சரேகை, தீர்க்கரேகை' : 'Nothing imported. Check format: Name, lat, lng');
+    }
   };
 
   const loadFromCoords = (i: number) => {
@@ -90,7 +110,7 @@ export default function SetupPage() {
       const routeId = newRoute._id || newRoute.id;
 
       // 4. Create new bus
-      await fetch('/api/buses', {
+      const busRes = await fetch('/api/buses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -107,9 +127,11 @@ export default function SetupPage() {
           currentStop: stops[0].name
         })
       });
+      const newBus = await busRes.json();
+      const busId = newBus._id || newBus.id;
+      setSavedBusId(busId);
 
-      setMessage(lang === 'ta' ? 'வெற்றி! பக்கம் புதுப்பிக்கப்படுகிறது...' : 'Success! Refreshing page...');
-      setTimeout(() => window.location.reload(), 1500);
+      setMessage(lang === 'ta' ? 'வெற்றி! மேலே உள்ள Bus IDஐ நகலெடுக்கவும்' : 'Success! Copy the Bus ID above');
     } catch (e) {
       setMessage(lang === 'ta' ? 'பிழை: சேமிக்க முடியவில்லை' : 'Error: Could not save');
     }
@@ -220,9 +242,44 @@ export default function SetupPage() {
         </div>
       </div>
 
+      <div className="rounded-3xl bg-white/80 p-6 shadow-lg backdrop-blur-xl sm:p-8">
+        <h2 className="font-semibold text-[var(--text-primary)]">
+          {lang === 'ta' ? 'மொத்தமாக நிறுத்தங்களை இறக்குமதி செய்க' : 'Bulk Import Stops'}
+        </h2>
+        <p className="mt-1 text-xs text-[var(--text-secondary)]">
+          {lang === 'ta'
+            ? 'ஒவ்வொரு வரியிலும்: நிறுத்தத்தின் பெயர், அட்சரேகை, தீர்க்கரேகை (எ.கா: Tambaram, 12.9240, 80.1003)'
+            : 'One stop per line: Name, latitude, longitude (e.g. Tambaram, 12.9240, 80.1003)'}
+        </p>
+        <textarea value={bulkText} onChange={(e) => setBulkText(e.target.value)}
+          rows={6}
+          className="mt-3 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm outline-none focus:border-[#0EA5E9] font-mono"
+          placeholder={lang === 'ta' ? 'Tambaram, 12.9240, 80.1003\nChromepet, 12.9518, 80.1493\n...' : 'Tambaram, 12.9240, 80.1003\nChromepet, 12.9518, 80.1493\n...'} />
+        <button onClick={importBulk} disabled={!bulkText.trim()}
+          className="mt-2 rounded-xl bg-[#22C55E]/10 px-4 py-2 text-xs font-semibold text-[#22C55E] hover:bg-[#22C55E]/20 disabled:opacity-40">
+          {lang === 'ta' ? 'இறக்குமதி செய்க' : 'Import'}
+        </button>
+      </div>
+
       {message && (
         <div className={`rounded-2xl p-4 text-sm font-medium ${message.includes('Error') || message.includes('பிழை') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
           {message}
+        </div>
+      )}
+
+      {savedBusId && (
+        <div className="rounded-3xl border-2 border-[#0EA5E9] bg-[#0EA5E9]/5 p-6 shadow-lg backdrop-blur-xl">
+          <h3 className="text-sm font-bold text-[#0EA5E9]">
+            {lang === 'ta' ? 'ESP32 உங்கள் பேருந்து ஐடி' : 'ESP32 — Your Bus ID'}
+          </h3>
+          <p className="mt-3 font-mono text-2xl font-bold tracking-wider text-[var(--text-primary)]">
+            {savedBusId}
+          </p>
+          <p className="mt-2 text-xs text-[var(--text-secondary)]">
+            {lang === 'ta'
+              ? 'இந்த ஐடியை ESP32 குறியீட்டில் busId ஆக பயன்படுத்தவும். பக்கம் புதுப்பிக்கப்படும் வரை நகலெடுக்கவும்.'
+              : 'Use this as busId in the ESP32 firmware. Copy it before the page refreshes.'}
+          </p>
         </div>
       )}
 

@@ -183,6 +183,7 @@ async function tickBuses() {
   if (isDbReady()) {
     const buses = await Bus.find();
     for (const bus of buses) {
+      if (bus.lastRealUpdate) continue;
       const route = routeMap.get(bus.routeId);
       if (!route?.stops?.length) continue;
       const path = buildPath(route.stops);
@@ -208,6 +209,7 @@ async function tickBuses() {
 
   for (let index = 0; index < memory.buses.length; index += 1) {
     const bus = memory.buses[index];
+    if (bus.lastRealUpdate) continue;
     const route = routeMap.get(bus.routeId);
     if (!route?.stops?.length) continue;
     const path = buildPath(route.stops);
@@ -398,6 +400,36 @@ app.get('/api/me', authMiddleware, (req, res) => {
   res.json({ user: req.user });
 });
 
+// ESP32 fetches its assigned route config
+app.get('/api/device/config', async (_req, res) => {
+  const buses = await getBusesData();
+  const bus = buses[0];
+  if (!bus) return res.json({ configured: false, message: 'No bus found. Use /setup to create one.' });
+  const route = bus.route || null;
+  res.json({
+    configured: true,
+    bus: {
+      id: bus._id || bus.id,
+      number: bus.number,
+      seatCapacity: bus.seatCapacity,
+      latitude: bus.latitude,
+      longitude: bus.longitude,
+      status: bus.status
+    },
+    route: route ? {
+      id: route._id || route.id,
+      origin: route.origin,
+      destination: route.destination,
+      stops: (route.stops || []).map((s) => ({
+        name: s.name,
+        lat: s.lat,
+        lng: s.lng,
+        sequence: s.sequence
+      }))
+    } : null
+  });
+});
+
 // ESP32 sends passenger count (no GPS needed)
 app.post('/api/bus/passengers', async (req, res) => {
   const { busId, passengersInside } = req.body || {};
@@ -413,6 +445,7 @@ app.post('/api/bus/passengers', async (req, res) => {
 
   bus.passengersInside = clamp(Number(passengersInside), 0, bus.seatCapacity);
   bus.seatsAvailable = bus.seatCapacity - bus.passengersInside;
+  bus.lastRealUpdate = new Date().toISOString();
 
   if (isDbReady()) await bus.save();
 
@@ -448,6 +481,8 @@ app.post('/api/bus/location', async (req, res) => {
     bus.passengersInside = Number(passengersInside);
     bus.seatsAvailable = bus.seatCapacity - bus.passengersInside;
   }
+
+  bus.lastRealUpdate = new Date().toISOString();
 
   if (isDbReady()) await bus.save();
 

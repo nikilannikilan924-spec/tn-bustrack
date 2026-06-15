@@ -1,10 +1,9 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import Sidebar from '@/components/layout/Sidebar';
-import MobileNav from '@/components/layout/MobileNav';
 import PwaRegister from '@/components/PwaRegister';
-import { PanicButton } from '@/components/report/PanicButton';
 import { LanguageProvider } from '@/lib/LanguageContext';
+import { AuthProvider } from '@/lib/AuthContext';
 import { Space_Grotesk, Orbitron, JetBrains_Mono, Noto_Sans_Tamil } from 'next/font/google';
 
 const spaceGrotesk = Space_Grotesk({
@@ -66,17 +65,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className={`${spaceGrotesk.variable} ${orbitron.variable} ${jetbrainsMono.variable} ${notoSansTamil.variable} bg-[var(--bg-primary)] text-[var(--text-primary)]`}>
         <LanguageProvider>
-          <div className="min-h-screen min-h-dvh" style={{ background: 'var(--bg-primary)' }}>
-            <Sidebar />
-            <MobileNav />
-            <PwaRegister />
-            <PanicButton />
-            <main className="min-h-screen min-h-dvh pb-20 pl-0 md:ml-80 md:pb-0 md:pl-0 lg:px-8">
-              <div className="mx-auto max-w-7xl px-4 py-4 md:px-6 md:py-6">
-                {children}
-              </div>
-            </main>
-          </div>
+          <AuthProvider>
+            <div className="min-h-screen min-h-dvh" style={{ background: 'var(--bg-primary)' }}>
+              <Sidebar />
+              <PwaRegister />
+              <main className="min-h-screen min-h-dvh pl-0 md:ml-80 md:pl-0 lg:px-8">
+                <div className="mx-auto max-w-7xl px-4 py-4 md:px-6 md:py-6">
+                  {children}
+                </div>
+              </main>
+            </div>
+          </AuthProvider>
         </LanguageProvider>
       </body>
     </html>
