@@ -28,10 +28,41 @@ function statusColor(status: string) {
   return '#22C55E';
 }
 
+function makeBusIcon(bus: LiveBus, size: number) {
+  const color = statusColor(bus.status);
+  const label = bus.number.split(' ').pop() || bus.number;
+  return L.divIcon({
+    className: '',
+    html: `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+      <div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4);cursor:pointer"></div>
+      <span style="font-size:9px;font-weight:700;color:#1e293b;background:rgba(255,255,255,0.9);padding:0 4px;border-radius:4px;white-space:nowrap">${label}</span>
+    </div>`,
+    iconSize: [size, size + 18],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+function makePopupHtml(bus: LiveBus): string {
+  const etaText = bus.nextStops[0]
+    ? `<b>${bus.nextStops[0].name}</b> — ${bus.nextStops[0].etaMin} min (${bus.nextStops[0].distKm} km)`
+    : 'N/A';
+  return `<div style="font-family:system-ui;min-width:180px">
+    <div style="font-weight:700;font-size:14px;margin-bottom:4px">${bus.number}</div>
+    <div style="font-size:12px;color:#64748b;margin-bottom:6px">${bus.routeName}</div>
+    <table style="font-size:11px;width:100%">
+      <tr><td style="color:#64748b">Speed</td><td style="font-weight:600;text-align:right">${bus.speed} km/h</td></tr>
+      <tr><td style="color:#64748b">Status</td><td style="font-weight:600;text-align:right;color:${statusColor(bus.status)}">${bus.status.toUpperCase()}</td></tr>
+      <tr><td style="color:#64748b">Current Stop</td><td style="font-weight:600;text-align:right">${bus.currentStop}</td></tr>
+      <tr><td style="color:#64748b">Next Stop ETA</td><td style="font-weight:600;text-align:right">${bus.nextStops[0] ? bus.nextStops[0].etaMin + ' min' : '—'}</td></tr>
+      <tr><td style="color:#64748b">Seats</td><td style="font-weight:600;text-align:right">${bus.seatsAvailable}/${bus.seatCapacity}</td></tr>
+    </table>
+  </div>`;
+}
+
 export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const markersRef = useRef<L.LayerGroup | null>(null);
+  const markersRef = useRef<Map<string, L.Marker>>(new Map());
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -40,8 +71,8 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
     container.style.touchAction = 'none';
 
     const map = L.map(container, {
-      center: [13.0827, 80.2707],
-      zoom: 8,
+      center: [11.3, 78.1],
+      zoom: 9,
       zoomControl: true,
     });
 
@@ -50,7 +81,6 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
       minZoom: 5,
     }).addTo(map);
 
-    markersRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
 
     return () => {
@@ -60,23 +90,56 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
   }, []);
 
   useEffect(() => {
-    if (!markersRef.current || !mapRef.current) return;
-    const layer = markersRef.current;
-    layer.clearLayers();
+    const map = mapRef.current;
+    if (!map) return;
+
+    const markers = markersRef.current;
+    const seen = new Set<string>();
 
     buses.forEach((bus) => {
-      const color = statusColor(bus.status);
-      const icon = L.divIcon({
-        className: '',
-        html: `<div style="width:16px;height:16px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);cursor:pointer"></div>`,
-        iconSize: [16, 16],
-        iconAnchor: [8, 8],
-      });
+      seen.add(bus.id);
+      const latlng: L.LatLngExpression = [bus.latitude, bus.longitude];
 
-      const marker = L.marker([bus.latitude, bus.longitude], { icon }).addTo(layer);
-      marker.on('click', () => onBusSelect(bus.id));
+      if (markers.has(bus.id)) {
+        const marker = markers.get(bus.id)!;
+        marker.setLatLng(latlng);
+        marker.setIcon(makeBusIcon(bus, 14));
+        if (marker.getPopup()) {
+          marker.setPopupContent(makePopupHtml(bus));
+        }
+      } else {
+        const icon = makeBusIcon(bus, 14);
+        const marker = L.marker(latlng, { icon });
+        marker.bindPopup(makePopupHtml(bus), { closeButton: false });
+        marker.on('click', () => onBusSelect(bus.id));
+        marker.addTo(map);
+        markers.set(bus.id, marker);
+      }
+    });
+
+    markers.forEach((marker, id) => {
+      if (!seen.has(id)) {
+        marker.removeFrom(map);
+        markers.delete(id);
+      }
     });
   }, [buses, onBusSelect]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || buses.length === 0) return;
+    const hasValidCoord = buses.some(b => b.latitude !== 0 || b.longitude !== 0);
+    if (!hasValidCoord) return;
+
+    const valid = buses.filter(b => b.latitude !== 0 || b.longitude !== 0);
+    if (valid.length === 0) return;
+    if (valid.length === 1) {
+      map.setView([valid[0].latitude, valid[0].longitude], map.getZoom(), { animate: true });
+    } else {
+      const bounds = L.latLngBounds(valid.map(b => [b.latitude, b.longitude] as L.LatLngExpression));
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12, animate: true });
+    }
+  }, [buses]);
 
   return (
     <div className="relative h-[calc(100vh-5rem)] min-h-[500px] rounded-3xl border border-[var(--border)] bg-white/80 shadow-lg shadow-[var(--shadow-heavy)] max-sm:h-[calc(100dvh-4rem)] max-sm:rounded-2xl max-sm:min-h-[400px]">

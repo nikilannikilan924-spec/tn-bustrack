@@ -1,5 +1,5 @@
 // ============================================================
-//  TN BusTrack — ESP32 Firmware (no extra libs required)
+//  TN BusTrack — ESP32 Firmware v2 (fast response)
 //  Hardware: ESP32 + NEO-6M + HC-SR04 x2 + Relay
 // ============================================================
 
@@ -7,9 +7,9 @@
 #include <HTTPClient.h>
 
 // ── CHANGE THESE 3 LINES ────────────────────────────────────
-const char* WIFI_SSID     = "YourHotspotName";   // phone hotspot name
-const char* WIFI_PASSWORD = "YourPassword";       // hotspot password
-const char* BUS_ID        = "TN07 828 1122";      // any name works
+const char* WIFI_SSID     = "YourHotspotName";
+const char* WIFI_PASSWORD = "YourPassword";
+const char* BUS_ID        = "TN07 828 1122";
 // ────────────────────────────────────────────────────────────
 
 // ── SERVER URLs ─────────────────────────────────────────────
@@ -41,24 +41,105 @@ unsigned long lastGpsFix = 0;
 bool gpsFixed = false;
 HardwareSerial gps(2);
 
+bool validCoord(float lat, float lng) {
+  return lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 && !(lat == 0 && lng == 0);
+}
+
 // ── PASSENGER COUNT ─────────────────────────────────────────
 int passengers = 0;
 int state = 0;
-unsigned long lastSend = 0;
+int pendingPassengers = -1; // -1 means no pending update
+int debounce = 0;          // consecutive stable readings counter
 
-// ────────────────────────────────────────────────────────────
-//  READ DISTANCE (HC-SR04)
-// ────────────────────────────────────────────────────────────
-long readDistance(int trig, int echo) {
-  digitalWrite(trig, LOW);
+// ── TIMING ──────────────────────────────────────────────────
+unsigned long lastGpsSend = 0;
+unsigned long lastCountSend = 0;
+const unsigned long GPS_INTERVAL = 8000;  // send GPS every 8s
+const unsigned long COUNT_INTERVAL = 2000; // send count change within 2s
+
+// ── NON-BLOCKING SENSOR READING ────────────────────────────
+// 3-state: IDLE → WAITING_HIGH → WAITING_LOW → DONE
+#define S_IDLE 0
+#define S_WAIT_HIGH 1
+#define S_WAIT_LOW 2
+#define S_DONE 3
+
+struct USSensor {
+  int trig, echo;
+  int step;
+  unsigned long t;
+  long distance;
+  bool valid;
+};
+
+USSensor sensorA = {TRIG_A, ECHO_A, S_IDLE, 0, 999, false};
+USSensor sensorB = {TRIG_B, ECHO_B, S_IDLE, 0, 999, false};
+
+void startSensorRead(USSensor& s) {
+  digitalWrite(s.trig, LOW);
   delayMicroseconds(2);
-  digitalWrite(trig, HIGH);
+  digitalWrite(s.trig, HIGH);
   delayMicroseconds(10);
-  digitalWrite(trig, LOW);
-  long duration = pulseIn(echo, HIGH, 30000);
-  if (duration == 0) return 999;
-  long d = (duration * 0.034) / 2;
-  return d > 500 ? 999 : d;
+  digitalWrite(s.trig, LOW);
+  s.t = micros();
+  s.step = S_WAIT_HIGH;
+}
+
+void updateSensor(USSensor& s) {
+  if (s.step == S_IDLE || s.step == S_DONE) return;
+
+  unsigned long now = micros();
+
+  if (s.step == S_WAIT_HIGH) {
+    if (digitalRead(s.echo) == HIGH) {
+      s.t = now;
+      s.step = S_WAIT_LOW;
+    } else if (now - s.t > 30000) {
+      s.step = S_DONE;
+      s.distance = 999;
+      s.valid = false;
+    }
+    return;
+  }
+
+  if (s.step == S_WAIT_LOW) {
+    if (digitalRead(s.echo) == LOW) {
+      unsigned long duration = now - s.t;
+      long d = (duration * 0.034) / 2;
+      s.distance = d > 500 ? 999 : d;
+      s.valid = (s.distance < 999);
+      s.step = S_DONE;
+    } else if (now - s.t > 30000) {
+      s.step = S_DONE;
+      s.distance = 999;
+      s.valid = false;
+    }
+    return;
+  }
+}
+
+bool sensorBlocked(USSensor& s) {
+  return s.step == S_DONE && s.valid && s.distance < THRESHOLD;
+}
+
+void readSensors() {
+  // Start both sensors simultaneously for true parallel reads
+  if (sensorA.step == S_IDLE && sensorB.step == S_IDLE) {
+    startSensorRead(sensorA);
+    startSensorRead(sensorB);
+  }
+  // Update both (non-blocking — just checks echo pin state)
+  updateSensor(sensorA);
+  updateSensor(sensorB);
+}
+
+bool sensorsReady() {
+  return sensorA.step == S_DONE && sensorB.step == S_DONE;
+}
+
+void resetSensors() {
+  sensorA.step = S_IDLE;
+  sensorB.step = S_IDLE;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -100,10 +181,12 @@ void readGps() {
         if (field == 6) fix = atoi(token);
         field++;
       }
-      parseLatLng(latStr, lngStr, latDir, lngDir);
       if (fix > 0) {
-        gpsFixed = true;
-        lastGpsFix = millis();
+        parseLatLng(latStr, lngStr, latDir, lngDir);
+        if (validCoord(gpsLat, gpsLng)) {
+          gpsFixed = true;
+          lastGpsFix = millis();
+        }
       }
     }
 
@@ -125,8 +208,10 @@ void readGps() {
       }
       if (status == 'A') {
         parseLatLng(latStr, lngStr, latDir, lngDir);
-        gpsFixed = true;
-        lastGpsFix = millis();
+        if (validCoord(gpsLat, gpsLng)) {
+          gpsFixed = true;
+          lastGpsFix = millis();
+        }
       }
     }
 
@@ -177,6 +262,7 @@ void fetchConfig() {
   String url = String(CONFIG_URL) + String(BUS_ID);
   HTTPClient http;
   http.begin(url);
+  http.setTimeout(3000);
   int code = http.GET();
 
   if (code == 200) {
@@ -199,13 +285,21 @@ void fetchConfig() {
 // ────────────────────────────────────────────────────────────
 //  SEND GPS + COUNT TO SERVER
 // ────────────────────────────────────────────────────────────
-void sendLocation() {
-  if (WiFi.status() != WL_CONNECTED) return;
+bool httpPost(const char* url, const String& body) {
+  if (WiFi.status() != WL_CONNECTED) return false;
 
   HTTPClient http;
-  http.begin(GPS_URL);
+  http.begin(url);
   http.addHeader("Content-Type", "application/json");
+  http.setTimeout(3000);
 
+  int code = http.POST(body);
+  http.end();
+
+  return (code == 200 || code == 201);
+}
+
+void sendLocation() {
   String body = "{\"busId\":\"" + String(BUS_ID) + "\""
     + ",\"lat\":" + String(gpsLat, 6)
     + ",\"lng\":" + String(gpsLng, 6)
@@ -216,46 +310,40 @@ void sendLocation() {
     + ",\"gpsFixed\":" + (gpsFixed ? "true" : "false")
     + "}";
 
-  int code = http.POST(body);
+  bool ok = httpPost(GPS_URL, body);
 
-  Serial.print("GPS ");
-  if (code == 200 || code == 201) {
-    Serial.print("OK  ");
+  Serial.print("↑ ");
+  if (ok) {
+    Serial.print("OK ");
   } else {
     Serial.print("FAIL ");
   }
   if (gpsFixed) {
-    Serial.print(" LAT:" + String(gpsLat, 4));
-    Serial.print(" LNG:" + String(gpsLng, 4));
+    Serial.print(String(gpsLat, 4) + "," + String(gpsLng, 4));
     Serial.print(" " + String(gpsSpeed) + "km/h");
   } else {
-    Serial.print(" GPS:searching...");
+    Serial.print("GPS:searching...");
   }
-  Serial.print(" Pass:" + String(passengers));
-  Serial.print(" Seats:" + String(totalSeats - passengers));
-  Serial.println();
-
-  http.end();
+  Serial.println(" Pass:" + String(passengers));
 }
 
-// ────────────────────────────────────────────────────────────
-//  SEND COUNT ONLY (instant)
-// ────────────────────────────────────────────────────────────
-void sendCountOnly() {
-  if (WiFi.status() != WL_CONNECTED) return;
-
-  HTTPClient http;
-  http.begin(COUNT_URL);
-  http.addHeader("Content-Type", "application/json");
-
+void sendCount() {
   String body = "{\"busId\":\"" + String(BUS_ID) + "\""
     + ",\"inside\":" + String(passengers)
     + ",\"seats\":" + String(totalSeats - passengers)
     + "}";
 
-  int code = http.POST(body);
-  Serial.println("Count sent -> " + String(code) + "  Inside:" + String(passengers));
-  http.end();
+  bool ok = httpPost(COUNT_URL, body);
+  Serial.println("↑ COUNT " + String(ok ? "OK" : "FAIL") + " Pass:" + String(passengers));
+}
+
+// ────────────────────────────────────────────────────────────
+//  TRIGGER RELAY PULSE (non-blocking)
+// ────────────────────────────────────────────────────────────
+void pulseRelay(int pin) {
+  digitalWrite(pin, LOW);
+  delay(50);
+  digitalWrite(pin, HIGH);
 }
 
 // ────────────────────────────────────────────────────────────
@@ -302,42 +390,77 @@ void setup() {
 void loop() {
   readGps();
 
-  long dA = readDistance(TRIG_A, ECHO_A);
-  long dB = readDistance(TRIG_B, ECHO_B);
-  bool a = dA < THRESHOLD;
-  bool b = dB < THRESHOLD;
+  // Non-blocking sensor reads
+  readSensors();
 
-  if (state == 3) {
-    if (!a && !b) state = 0;
-    delay(100);
-    return;
-  }
+  if (sensorsReady()) {
+    bool a = sensorBlocked(sensorA);
+    bool b = sensorBlocked(sensorB);
 
-  if (!a && !b) {
-    state = 0;
-  } else if (state == 0) {
-    if (a && !b) state = 1;
-    else if (b && !a) state = 2;
-  } else if (a && b) {
-    if (state == 1) {
-      passengers++;
-      state = 3;
-      Serial.print("ENTER "); Serial.println(passengers);
-      sendCountOnly();
-      digitalWrite(RELAY_A, LOW); delay(100); digitalWrite(RELAY_A, HIGH);
-    } else if (state == 2) {
-      passengers--; if (passengers < 0) passengers = 0;
-      state = 3;
-      Serial.print("EXIT  "); Serial.println(passengers);
-      sendCountOnly();
-      digitalWrite(RELAY_B, LOW); delay(100); digitalWrite(RELAY_B, HIGH);
+    if (state == 3) {
+      if (!a && !b) {
+        if (++debounce >= 2) { debounce = 0; state = 0; }
+      } else {
+        debounce = 0;
+      }
+    } else if (!a && !b) {
+      if (++debounce >= 2) { debounce = 0; state = 0; }
+    } else if (state == 0) {
+      if (a && !b) {
+        if (++debounce >= 2) { debounce = 0; state = 1; }
+      } else if (b && !a) {
+        if (++debounce >= 2) { debounce = 0; state = 2; }
+      } else {
+        debounce = 0;
+      }
+    } else if (a && b) {
+      if (++debounce >= 2) {
+        debounce = 0;
+        if (state == 1) {
+          passengers++;
+          state = 3;
+          pendingPassengers = passengers;
+          Serial.println("ENTER " + String(passengers));
+          pulseRelay(RELAY_A);
+        } else if (state == 2) {
+          passengers--;
+          if (passengers < 0) passengers = 0;
+          state = 3;
+          pendingPassengers = passengers;
+          Serial.println("EXIT  " + String(passengers));
+          pulseRelay(RELAY_B);
+        }
+      }
+    } else {
+      debounce = 0;
     }
+
+    resetSensors();
   }
 
-  if (WiFi.status() == WL_CONNECTED && millis() - lastSend > 10000) {
-    lastSend = millis();
+  unsigned long now = millis();
+
+  // Clear fix if stale (>30s since last valid GPS)
+  if (gpsFixed && now - lastGpsFix > 30000) {
+    gpsFixed = false;
+    gpsLat = 0;
+    gpsLng = 0;
+    Serial.println("GPS fix lost");
+  }
+
+  // Send count update promptly when passengers change
+  if (pendingPassengers >= 0 && (now - lastCountSend > COUNT_INTERVAL)) {
+    lastCountSend = now;
+    sendCount();
+    pendingPassengers = -1;
+  }
+
+  // Send GPS + count periodically
+  if (now - lastGpsSend > GPS_INTERVAL) {
+    lastGpsSend = now;
     sendLocation();
   }
 
-  delay(100);
+  // Fast loop — sensor responds immediately
+  delay(5);
 }

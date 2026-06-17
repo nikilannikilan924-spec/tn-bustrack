@@ -1,12 +1,18 @@
 'use client';
 
-import { getMockDashboardData } from '@/lib/mock-data';
+import { useEffect, useState } from 'react';
+import { fetchAlerts } from '@/lib/types';
+import type { Alert } from '@/lib/types';
 import { AlertCard } from '@/components/alerts/AlertCard';
 import { useLanguage } from '@/lib/LanguageContext';
 
 export default function AlertsPage() {
-  const { alerts } = getMockDashboardData();
+  const [alerts, setAlerts] = useState<Alert[]>([]);
   const { t } = useLanguage();
+
+  useEffect(() => {
+    fetchAlerts().then(setAlerts);
+  }, []);
 
   return (
     <div className="space-y-5 pb-28 max-sm:space-y-4">

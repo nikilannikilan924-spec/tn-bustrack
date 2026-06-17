@@ -1,4 +1,4 @@
-import type { Alert } from '@/lib/mock-data';
+import type { Alert } from '@/lib/types';
 
 interface AdminAlertPanelProps {
   alerts: Alert[];

@@ -1,4 +1,4 @@
-import type { Bus } from '@/lib/mock-data';
+import type { Bus } from '@/lib/types';
 import { haversineKm } from '@/lib/distance';
 
 export function estimateEtaToStop(bus: Bus, stopSequence: number): number | null {

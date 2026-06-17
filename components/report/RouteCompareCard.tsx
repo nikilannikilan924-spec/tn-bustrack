@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import type { Bus } from '@/lib/mock-data';
+import type { Bus } from '@/lib/types';
 import { useLanguage } from '@/lib/LanguageContext';
 import { findRouteOptions, getSmartSuggestion } from '@/lib/routeCompare';
 

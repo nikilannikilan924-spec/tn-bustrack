@@ -1,22 +1,30 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { getMockDashboardData, type Bus } from '@/lib/mock-data';
 import { subscribeBusLocationUpdate } from '@/lib/socket';
+import { fetchBuses, fetchStops, normalizeAPIBus } from '@/lib/types';
+import type { Bus, Stop } from '@/lib/types';
 import { useLanguage } from '@/lib/LanguageContext';
 import { findNearbyStops, type NearbyStop, getCrowdednessColor } from '@/lib/nearby';
 import { formatKm } from '@/lib/distance';
 
 export default function NearbyPage() {
   const { t } = useLanguage();
-  const { buses: seedBuses, stops: seedStops } = useMemo(() => getMockDashboardData(), []);
-  const [buses, setBuses] = useState<Bus[]>(seedBuses);
+  const [buses, setBuses] = useState<Bus[]>([]);
+  const [stops, setStops] = useState<Stop[]>([]);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [radius, setRadius] = useState(1.5);
 
   useEffect(() => {
+    fetchStops().then(async allStops => {
+      setStops(allStops);
+      const apiBuses = await fetchBuses(allStops);
+      setBuses(apiBuses);
+      setLoading(false);
+    });
+
     if (!navigator.geolocation) {
       setError('Geolocation not supported');
       setLoading(false);
@@ -37,17 +45,19 @@ export default function NearbyPage() {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = subscribeBusLocationUpdate((payload: Bus[] | { buses: Bus[] }) => {
-      const liveBuses = Array.isArray(payload) ? payload : payload.buses;
-      if (Array.isArray(liveBuses)) setBuses(liveBuses);
+    if (stops.length === 0) return;
+    const unsubscribe = subscribeBusLocationUpdate((payload: any) => {
+      const raw = Array.isArray(payload) ? payload : [payload];
+      const live = raw.map(b => normalizeAPIBus(b, stops));
+      setBuses(live);
     });
     return unsubscribe;
-  }, []);
+  }, [stops]);
 
   const nearbyStops: NearbyStop[] = useMemo(() => {
     if (!location) return [];
-    return findNearbyStops(location.lat, location.lng, seedStops, buses, radius);
-  }, [location, seedStops, buses, radius]);
+    return findNearbyStops(location.lat, location.lng, stops, buses, radius);
+  }, [location, stops, buses, radius]);
 
   const handleRefresh = useCallback(() => {
     if (!navigator.geolocation) return;

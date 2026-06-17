@@ -1,7 +1,9 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { notFound } from 'next/navigation';
-import { getMockDashboardData } from '@/lib/mock-data';
+import { fetchStops } from '@/lib/types';
+import type { Stop, Route } from '@/lib/types';
 import { Card } from '@/components/ui/Card';
 
 interface RoutePageProps {
@@ -9,8 +11,38 @@ interface RoutePageProps {
 }
 
 export default function RouteDetailPage({ params }: RoutePageProps) {
-  const { routes, stops } = getMockDashboardData();
-  const route = routes.find((route) => route.id === params.id);
+  const [route, setRoute] = useState<Route | null>(null);
+  const [stops, setStops] = useState<Stop[]>([]);
+
+  useEffect(() => {
+    fetchStops().then(allStops => {
+      setStops(allStops);
+      const routeStops = allStops.filter(s => s.routeId === params.id);
+      if (routeStops.length > 0) {
+        setRoute({
+          id: params.id,
+          number: params.id.replace('route-', '').toUpperCase(),
+          name: params.id.replace('route-', 'Route ').replace(/-/g, ' '),
+          operator: 'TNSTC',
+          busType: 'Normal',
+          origin: routeStops[0].name,
+          destination: routeStops[routeStops.length - 1].name,
+          status: 'active',
+          stops: routeStops,
+        });
+      }
+    });
+  }, [params.id]);
+
+  if (route === null) {
+    return (
+      <div className="space-y-6 p-6">
+        <div className="rounded-3xl border border-white/10 bg-slate-900/75 p-8 shadow-soft backdrop-blur">
+          <p className="text-slate-400">Loading route...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!route) {
     notFound();

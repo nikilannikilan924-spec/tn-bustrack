@@ -1,4 +1,4 @@
-import type { Bus, Route } from '@/lib/mock-data';
+import type { Bus, Route } from '@/lib/types';
 import { haversineKm } from '@/lib/distance';
 import { predictArrival } from '@/lib/prediction';
 

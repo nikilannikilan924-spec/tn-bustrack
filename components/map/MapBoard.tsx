@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
-import { subscribeBusLocationUpdate } from '@/lib/socket';
+import { subscribeBusLocationUpdate, subscribeBusRemoved } from '@/lib/socket';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { useLanguage } from '@/lib/LanguageContext';
@@ -49,16 +49,20 @@ export function MapBoard() {
   const [stopSearch, setStopSearch] = useState('');
 
   useEffect(() => {
-    const unsubscribe = subscribeBusLocationUpdate((payload: any) => {
+    const unsub1 = subscribeBusLocationUpdate((payload: any) => {
       const raw = Array.isArray(payload) ? payload : [payload];
       if (Array.isArray(raw)) {
         setBuses(raw.map(normalizeBus));
       }
     });
 
+    const unsub2 = subscribeBusRemoved((busId: string) => {
+      setBuses(prev => prev.filter(b => b.id !== busId));
+    });
+
     fetchBuses();
     const interval = setInterval(fetchBuses, 5000);
-    return () => { unsubscribe(); clearInterval(interval); };
+    return () => { unsub1(); unsub2(); clearInterval(interval); };
   }, []);
 
   async function fetchBuses() {
@@ -86,6 +90,7 @@ export function MapBoard() {
   }, [buses, stopSearch]);
 
   const running = filteredBuses.filter((bus) => bus.status === 'running').length;
+  const selectedBus = filteredBuses.find(b => b.id === selectedBusId) || null;
 
   const findBackupBus = (bus: LiveBus): LiveBus | null => {
     if (bus.seatsAvailable > 0) return null;
@@ -133,25 +138,78 @@ export function MapBoard() {
             </p>
           </div>
 
-          <div className="glass rounded-3xl p-5 shadow-lg shadow-[var(--shadow-heavy)] max-sm:rounded-2xl max-sm:p-4">
-            <p className="font-orbitron text-[10px] font-medium uppercase tracking-[0.25em] text-[var(--text-secondary)]">
-              {t('map.legend')}
-            </p>
-            <div className="mt-4 space-y-2 text-sm">
-              <div className="flex items-center gap-3 rounded-xl bg-[var(--overlay-subtle)] px-3 py-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-[#22C55E] shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
-                <span className="text-[var(--text-secondary)]">{t('map.legend.running')}</span>
+          {selectedBusId ? (
+            <div className="glass rounded-3xl p-5 shadow-lg shadow-[var(--shadow-heavy)] max-sm:rounded-2xl max-sm:p-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="font-orbitron text-[10px] font-medium uppercase tracking-[0.25em] text-[var(--text-secondary)]">
+                  {selectedBus?.number || 'Bus'} ETA
+                </p>
+                <button onClick={() => setSelectedBusId(null)} className="text-[10px] text-[#0EA5E9] hover:underline">Close</button>
               </div>
-              <div className="flex items-center gap-3 rounded-xl bg-[var(--overlay-subtle)] px-3 py-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-[#F59E0B] shadow-[0_0_8px_rgba(245,158,11,0.4)]" />
-                <span className="text-[var(--text-secondary)]">{t('map.legend.delayed')}</span>
-              </div>
-              <div className="flex items-center gap-3 rounded-xl bg-[var(--overlay-subtle)] px-3 py-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-[var(--text-muted)]" />
-                <span className="text-[var(--text-secondary)]">{t('map.legend.stopped')}</span>
+              {selectedBus && (
+                <div className="space-y-2">
+                  <div className="rounded-xl bg-[var(--overlay-hover)] p-3">
+                    <p className="text-xs text-[var(--text-muted)]">Speed</p>
+                    <p className="font-jetbrains text-sm font-bold">{selectedBus.speed} km/h</p>
+                  </div>
+                  <div className="rounded-xl bg-[var(--overlay-hover)] p-3">
+                    <p className="text-xs text-[var(--text-muted)]">Current Stop</p>
+                    <p className="text-sm font-semibold">{selectedBus.currentStop}</p>
+                  </div>
+                  <div className="rounded-xl bg-[var(--overlay-hover)] p-3">
+                    <p className="text-xs text-[var(--text-muted)]">Next Stop</p>
+                    {selectedBus.nextStops[0] ? (
+                      <>
+                        <p className="text-sm font-semibold">{selectedBus.nextStops[0].name}</p>
+                        <p className="font-jetbrains text-xs text-[#0EA5E9]">
+                          {selectedBus.nextStops[0].etaMin} min ({selectedBus.nextStops[0].distKm} km)
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-[var(--text-muted)]">No upcoming stops</p>
+                    )}
+                  </div>
+                  {selectedBus.nextStops.length > 1 && (
+                    <div className="rounded-xl bg-[var(--overlay-subtle)] p-3">
+                      <p className="text-xs text-[var(--text-muted)] mb-2">All Upcoming Stops</p>
+                      <div className="space-y-1 max-h-32 overflow-y-auto">
+                        {selectedBus.nextStops.slice(1).map((s, i) => (
+                          <div key={i} className="flex justify-between text-xs">
+                            <span className="text-[var(--text-secondary)]">{s.name}</span>
+                            <span className="font-jetbrains text-[var(--text-muted)]">{s.etaMin} min</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="rounded-xl bg-[var(--overlay-hover)] p-3">
+                    <p className="text-xs text-[var(--text-muted)]">Seats</p>
+                    <p className="text-sm font-semibold">{selectedBus.seatsAvailable}/{selectedBus.seatCapacity}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="glass rounded-3xl p-5 shadow-lg shadow-[var(--shadow-heavy)] max-sm:rounded-2xl max-sm:p-4">
+              <p className="font-orbitron text-[10px] font-medium uppercase tracking-[0.25em] text-[var(--text-secondary)]">
+                {t('map.legend')}
+              </p>
+              <div className="mt-4 space-y-2 text-sm">
+                <div className="flex items-center gap-3 rounded-xl bg-[var(--overlay-subtle)] px-3 py-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#22C55E] shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
+                  <span className="text-[var(--text-secondary)]">{t('map.legend.running')}</span>
+                </div>
+                <div className="flex items-center gap-3 rounded-xl bg-[var(--overlay-subtle)] px-3 py-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#F59E0B] shadow-[0_0_8px_rgba(245,158,11,0.4)]" />
+                  <span className="text-[var(--text-secondary)]">{t('map.legend.delayed')}</span>
+                </div>
+                <div className="flex items-center gap-3 rounded-xl bg-[var(--overlay-subtle)] px-3 py-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-[var(--text-muted)]" />
+                  <span className="text-[var(--text-secondary)]">{t('map.legend.stopped')}</span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           <div className="glass rounded-3xl p-5 shadow-lg shadow-[var(--shadow-heavy)] max-sm:rounded-2xl max-sm:p-4">
             <div className="flex items-center justify-between">
@@ -208,9 +266,13 @@ export function MapBoard() {
                         </div>
                         <div className="ml-3 shrink-0 text-right">
                           <div className="font-jetbrains text-xs text-[var(--text-secondary)]">{bus.speed} km/h</div>
-                          <div className="font-jetbrains text-[10px] text-[var(--text-muted)]">
-                            {bus.nextStops[0] ? `${bus.nextStops[0].distKm} km` : ''}
-                          </div>
+                          {bus.nextStops[0] ? (
+                            <div className="font-jetbrains text-[10px] text-[#0EA5E9]">
+                              {bus.nextStops[0].etaMin} min
+                            </div>
+                          ) : (
+                            <div className="font-jetbrains text-[10px] text-[var(--text-muted)]">{t('map.noBuses')}</div>
+                          )}
                         </div>
                       </button>
                       {isFull && backupBus && (

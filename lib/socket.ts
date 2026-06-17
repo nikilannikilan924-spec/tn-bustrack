@@ -28,3 +28,11 @@ export function subscribeBusLocationUpdate(callback: (payload: any) => void) {
     client?.off('busUpdate', callback);
   };
 }
+
+export function subscribeBusRemoved(callback: (busId: string) => void) {
+  const client = getSocket();
+  client?.on('busRemoved', callback);
+  return () => {
+    client?.off('busRemoved', callback);
+  };
+}

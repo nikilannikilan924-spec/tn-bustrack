@@ -1,22 +1,41 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { getMockDashboardData } from '@/lib/mock-data';
+import { fetchBuses, fetchStops } from '@/lib/types';
+import type { Bus, Route } from '@/lib/types';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { useLanguage } from '@/lib/LanguageContext';
 
 export function SavedRoutesBoard() {
   const { t } = useLanguage();
-  const { routes, buses } = getMockDashboardData();
+  const [buses, setBuses] = useState<Bus[]>([]);
   const [savedRoutes, setSavedRoutes] = useState<string[]>([]);
 
   useEffect(() => {
     const stored = window.localStorage.getItem('tn-bustrack-saved-routes');
     if (stored) setSavedRoutes(JSON.parse(stored) as string[]);
+    fetchStops().then(allStops => fetchBuses(allStops)).then(setBuses);
   }, []);
 
-  const saved = useMemo(() => routes.filter((route) => savedRoutes.includes(route.id)), [routes, savedRoutes]);
+  const savedRouteOptions = useMemo(() => {
+    const routesMap = new Map<string, { origin: string; destination: string; number: string; operator: string; busType: string }>();
+    buses.forEach(b => {
+      if (!routesMap.has(b.route.id)) {
+        routesMap.set(b.route.id, {
+          origin: b.route.origin,
+          destination: b.route.destination,
+          number: b.route.number,
+          operator: b.route.operator,
+          busType: b.route.busType,
+        });
+      }
+    });
+    const routeIds = new Set(savedRoutes);
+    return Array.from(routesMap.entries())
+      .filter(([id]) => routeIds.has(id))
+      .map(([id, r]) => ({ id, ...r }));
+  }, [buses, savedRoutes]);
 
   const removeRoute = (routeId: string) => {
     const next = savedRoutes.filter((id) => id !== routeId);
@@ -35,9 +54,9 @@ export function SavedRoutesBoard() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        {saved.length ? (
-          saved.map((route) => {
-            const routeBus = buses.find((bus) => bus.routeId === route.id);
+        {savedRouteOptions.length ? (
+          savedRouteOptions.map((route) => {
+            const routeBus = buses.find((b) => b.route.id === route.id);
             return (
               <Card
                 key={route.id}

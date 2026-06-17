@@ -324,6 +324,38 @@ app.get('/api/device/config', (req, res) => {
 });
 
 // ── HEALTH CHECK ─────────────────────────────────────────────
+// ── STOPS LIST ───────────────────────────────────────────────
+const ALL_STOPS = [];
+Object.entries(STOPS).forEach(([routeKey, stops]) => {
+  stops.forEach((stop, i) => {
+    ALL_STOPS.push({
+      id: `${routeKey}-${i}`,
+      name: stop.name,
+      lat: stop.lat,
+      lng: stop.lng,
+      sequence: i + 1,
+      routeId: routeKey,
+    });
+  });
+});
+
+app.get('/api/stops', (_req, res) => {
+  res.json(ALL_STOPS);
+});
+
+// ── ALERTS ────────────────────────────────────────────────────
+let memoryAlerts = [];
+
+app.get('/api/alerts', (_req, res) => {
+  res.json(memoryAlerts);
+});
+
+app.post('/api/alerts', (req, res) => {
+  const alert = { id: `alert-${Date.now()}`, createdAt: new Date().toISOString(), ...req.body };
+  memoryAlerts.push(alert);
+  res.status(201).json(alert);
+});
+
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, service: 'TN BusTrack API', busCount: Object.keys(busPositions).length });
 });
@@ -338,6 +370,23 @@ app.get('/health', (req, res) => {
 });
 
 
+
+// ── STALE BUS CLEANUP (every 10s, remove buses offline >30s) ─
+setInterval(() => {
+  const now = Date.now();
+  Object.keys(busPositions).forEach((busId) => {
+    const bus = busPositions[busId];
+    if (!bus || !bus.lastUpdate) return;
+    const age = now - new Date(bus.lastUpdate).getTime();
+    if (age > 30000) {
+      console.log(`Removing stale bus ${busId} (offline ${Math.round(age / 1000)}s)`);
+      delete busPositions[busId];
+      delete busConfigs[busId];
+      delete gpsHistory[busId];
+      io.to('all-buses').emit('busRemoved', busId);
+    }
+  });
+}, 10000);
 
 // ── SOCKET.IO ────────────────────────────────────────────────
 io.on('connection', (socket) => {

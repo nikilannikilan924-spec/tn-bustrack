@@ -2,7 +2,7 @@
 
 import { memo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Bus } from '@/lib/mock-data';
+import type { Bus } from '@/lib/types';
 import { useLanguage } from '@/lib/LanguageContext';
 import { haversineKm, formatKm } from '@/lib/distance';
 import { estimateEtaToStop } from '@/lib/eta';

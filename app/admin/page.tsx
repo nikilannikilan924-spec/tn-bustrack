@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
-import { getMockDashboardData, type Bus } from '@/lib/mock-data';
 import { subscribeBusLocationUpdate } from '@/lib/socket';
+import { fetchBuses, fetchStops, fetchAlerts, normalizeAPIBus } from '@/lib/types';
+import type { Bus, Alert, Stop } from '@/lib/types';
 import { useLanguage } from '@/lib/LanguageContext';
 import { AdminStatCard } from '@/components/admin/AdminStatCard';
 import { AdminMapPreview } from '@/components/admin/AdminMapPreview';
@@ -15,36 +16,49 @@ const AdminBusTable = dynamic(() => import('@/components/admin/AdminBusTable').t
 
 export default function AdminDashboard() {
   const { t } = useLanguage();
-  const { buses: seedBuses, routes, alerts } = useMemo(() => getMockDashboardData(), []);
-  const [buses, setBuses] = useState<Bus[]>(seedBuses);
+  const [buses, setBuses] = useState<Bus[]>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [stops, setStops] = useState<Stop[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [time, setTime] = useState(new Date());
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
+    fetchAlerts().then(setAlerts);
+    fetchStops().then(async allStops => {
+      setStops(allStops);
+      const apiBuses = await fetchBuses(allStops);
+      setBuses(apiBuses);
+      setLoaded(true);
+    });
     return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
-    const unsubscribe = subscribeBusLocationUpdate((payload: Bus[] | { buses: Bus[] }) => {
-      const liveBuses = Array.isArray(payload) ? payload : payload.buses;
-      if (Array.isArray(liveBuses)) setBuses(liveBuses);
+    if (stops.length === 0) return;
+    const unsubscribe = subscribeBusLocationUpdate((payload: any) => {
+      const raw = Array.isArray(payload) ? payload : [payload];
+      const live = raw.map(b => normalizeAPIBus(b, stops));
+      setBuses(live);
+      setLoaded(true);
     });
     return unsubscribe;
-  }, []);
+  }, [stops]);
 
+  const routeCount = new Set(stops.map(s => s.routeId).filter(Boolean)).size;
   const activeBuses = buses.filter((b) => b.status === 'running').length;
   const delayedBuses = buses.filter((b) => b.status === 'delayed');
   const totalPassengers = buses.reduce((s, b) => s + b.passengersInside, 0);
-  const avgSeatsPct = Math.round(
+  const avgSeatsPct = buses.length > 0 ? Math.round(
     buses.reduce((s, b) => s + (b.seatsAvailable / b.seatCapacity) * 100, 0) / buses.length
-  );
+  ) : 0;
 
   const navItems = [
     { icon: '🗺', label: 'Live Map', href: '/map', badge: undefined, active: false },
     { icon: '📊', label: 'Dashboard', href: '/admin', badge: undefined, active: true },
     { icon: '🚌', label: 'Buses', href: '/dashboard', badge: String(buses.length), active: false },
-    { icon: '🛣', label: 'Routes', href: '#', badge: String(routes.length), active: false },
+    { icon: '🛣', label: 'Routes', href: '#', badge: String(routeCount), active: false },
     { icon: '🔔', label: 'Alerts', href: '/alerts', badge: String(alerts.length), active: false },
     { icon: '⚙️', label: 'Settings', href: '/settings', badge: undefined, active: false },
   ];
@@ -168,7 +182,7 @@ export default function AdminDashboard() {
           </div>
 
           <div className="mb-6 grid gap-6 xl:grid-cols-[1.5fr_1fr]">
-            <AdminMapPreview buses={buses} routesCount={routes.length} />
+            <AdminMapPreview buses={buses} routesCount={routeCount} />
             <AdminActivityFeed />
           </div>
 

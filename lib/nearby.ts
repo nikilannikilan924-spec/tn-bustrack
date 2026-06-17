@@ -1,5 +1,5 @@
 import { haversineKm } from './distance';
-import type { Bus, Stop } from './mock-data';
+import type { Bus, Stop } from './types';
 
 export interface ApproachingBus {
   bus: Bus;

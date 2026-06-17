@@ -1,4 +1,4 @@
-import type { Bus } from '@/lib/mock-data';
+import type { Bus } from '@/lib/types';
 
 interface AdminMapPreviewProps {
   buses: Bus[];

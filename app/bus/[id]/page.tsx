@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { notFound, useRouter } from 'next/navigation';
-import { getMockDashboardData, type Bus } from '@/lib/mock-data';
 import { subscribeBusLocationUpdate } from '@/lib/socket';
+import { fetchBuses, fetchStops, normalizeAPIBus } from '@/lib/types';
+import type { Bus, Stop } from '@/lib/types';
 import { useLanguage } from '@/lib/LanguageContext';
 import { Button } from '@/components/ui/Button';
 import { haversineKm, formatKm } from '@/lib/distance';
@@ -16,18 +17,34 @@ export default function BusDetailPage({ params }: BusPageProps) {
   const { id } = params;
   const { t } = useLanguage();
   const router = useRouter();
-  const { buses: seedBuses } = useMemo(() => getMockDashboardData(), []);
-  const [buses, setBuses] = useState<Bus[]>(seedBuses);
+  const [buses, setBuses] = useState<Bus[]>([]);
+  const [stops, setStops] = useState<Stop[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = subscribeBusLocationUpdate((payload: Bus[] | { buses: Bus[] }) => {
-      const liveBuses = Array.isArray(payload) ? payload : payload.buses;
-      if (Array.isArray(liveBuses)) setBuses(liveBuses);
+    fetchStops().then(allStops => {
+      setStops(allStops);
+      return fetchBuses(allStops);
+    }).then(apiBuses => {
+      setBuses(apiBuses);
+      setLoaded(true);
     });
-    return unsubscribe;
   }, []);
 
+  useEffect(() => {
+    if (stops.length === 0) return;
+    const unsubscribe = subscribeBusLocationUpdate((payload: any) => {
+      const raw = Array.isArray(payload) ? payload : [payload];
+      const live = raw.map(b => normalizeAPIBus(b, stops));
+      setBuses(live);
+      setLoaded(true);
+    });
+    return unsubscribe;
+  }, [stops]);
+
   const bus = buses.find((b) => b.id === id);
+  if (!loaded) return <div className="space-y-5 pb-28 max-sm:space-y-4 p-6"><p className="text-[var(--text-secondary)]">Loading...</p></div>;
+  if (!bus) return notFound();
   if (!bus) return notFound();
 
   const currentIndex = bus.route.stops.findIndex((stop) => stop.name === bus.currentStop);

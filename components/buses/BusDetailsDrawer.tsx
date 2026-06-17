@@ -1,4 +1,4 @@
-import type { Bus } from '@/lib/mock-data';
+import type { Bus } from '@/lib/types';
 import { useLanguage } from '@/lib/LanguageContext';
 
 interface BusDetailsDrawerProps {

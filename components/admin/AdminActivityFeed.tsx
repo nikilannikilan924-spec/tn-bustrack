@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { getMockDashboardData, type Bus } from '@/lib/mock-data';
 import { subscribeBusLocationUpdate } from '@/lib/socket';
+import { fetchBuses, fetchStops, normalizeAPIBus } from '@/lib/types';
+import type { Bus } from '@/lib/types';
 
 interface Activity {
   id: string;
@@ -37,46 +38,51 @@ const typeColors: Record<Activity['type'], string> = {
 };
 
 export function AdminActivityFeed() {
-  const { buses: seedBuses } = getMockDashboardData();
   const [activities, setActivities] = useState<Activity[]>([]);
-  const [buses] = useState<Bus[]>(seedBuses);
+  const [buses, setBuses] = useState<Bus[]>([]);
+  const busesRef = useRef<Bus[]>([]);
 
   useEffect(() => {
     setActivities([
-      { id: 'init-1', type: 'arrival', message: 'Bus TN01 5D 4821 arrived Marina Beach', busNumber: 'TN01 5D 4821', timestamp: new Date() },
-      { id: 'init-2', type: 'delay', message: 'Bus 570 — delayed 11 mins at Alandur', busNumber: 'TN01 570 2041', timestamp: new Date(Date.now() - 30000) },
-      { id: 'init-3', type: 'seats', message: 'Bus 21B — 17 seats available', busNumber: 'TN10 21B 3310', timestamp: new Date(Date.now() - 60000) },
+      { id: 'init-1', type: 'arrival', message: 'System initialized — bus tracking active', busNumber: 'TN BusTrack', timestamp: new Date() },
     ]);
+    fetchStops().then(async allStops => {
+      const apiBuses = await fetchBuses(allStops);
+      setBuses(apiBuses);
+      busesRef.current = apiBuses;
+    });
   }, []);
 
   useEffect(() => {
     const events: Activity['type'][] = ['arrival', 'seats', 'delay', 'departure'];
     const timer = setInterval(() => {
-      const bus = buses[Math.floor(Math.random() * buses.length)];
+      const current = busesRef.current;
+      if (current.length === 0) return;
+      const bus = current[Math.floor(Math.random() * current.length)];
       const eventType = events[Math.floor(Math.random() * events.length)];
       setActivities((prev) => [generateActivity(bus, eventType), ...prev].slice(0, 20));
     }, 5000);
     return () => clearInterval(timer);
-  }, [buses]);
+  }, []);
 
   useEffect(() => {
-    const unsubscribe = subscribeBusLocationUpdate((payload: Bus[] | { buses: Bus[] }) => {
-      const liveBuses = Array.isArray(payload) ? payload : payload.buses;
-      if (!Array.isArray(liveBuses)) return;
-      const changed = liveBuses.filter((b) => {
-        const old = seedBuses.find((s) => s.id === b.id);
-        return old && (old.currentStop !== b.currentStop || old.status !== b.status);
+    fetchStops().then(allStops => {
+      const unsubscribe = subscribeBusLocationUpdate((payload: any) => {
+        const raw = Array.isArray(payload) ? payload : [payload];
+        const live = raw.map(b => normalizeAPIBus(b, allStops));
+        setBuses(live);
+        busesRef.current = live;
+        if (live.length && raw.length) {
+          const bus = live[0];
+          setActivities((prev) => [
+            generateActivity(bus, bus.speed > 0 ? 'arrival' : 'delay'),
+            ...prev
+          ].slice(0, 20));
+        }
       });
-      if (changed.length) {
-        const bus = changed[0];
-        setActivities((prev) => [
-          generateActivity(bus, bus.status === 'delayed' ? 'delay' : 'arrival'),
-          ...prev
-        ].slice(0, 20));
-      }
+      return unsubscribe;
     });
-    return unsubscribe;
-  }, [seedBuses]);
+  }, []);
 
   return (
     <div className="rounded-2xl border border-white/5 bg-[#1A2235] p-5">

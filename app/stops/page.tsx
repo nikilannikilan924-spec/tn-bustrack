@@ -1,32 +1,43 @@
 'use client';
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { getMockDashboardData, type Bus } from '@/lib/mock-data';
 import { subscribeBusLocationUpdate } from '@/lib/socket';
+import { fetchBuses, fetchStops, normalizeAPIBus } from '@/lib/types';
+import type { Bus, Stop } from '@/lib/types';
 import { useLanguage } from '@/lib/LanguageContext';
 import { BusStopCard } from '@/components/stops/BusStopCard';
 import { RouteCompareCard } from '@/components/report/RouteCompareCard';
 
 export default function StopsPage() {
   const { t } = useLanguage();
-  const { buses: seedBuses, stops: seedStops } = useMemo(() => getMockDashboardData(), []);
-  const [buses, setBuses] = useState<Bus[]>(seedBuses);
+  const [buses, setBuses] = useState<Bus[]>([]);
+  const [stops, setStops] = useState<Stop[]>([]);
   const [search, setSearch] = useState('');
   const [selectedStop, setSelectedStop] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = subscribeBusLocationUpdate((payload: Bus[] | { buses: Bus[] }) => {
-      const liveBuses = Array.isArray(payload) ? payload : payload.buses;
-      if (Array.isArray(liveBuses)) setBuses(liveBuses);
+    fetchStops().then(async allStops => {
+      setStops(allStops);
+      const apiBuses = await fetchBuses(allStops);
+      setBuses(apiBuses);
     });
-    return unsubscribe;
   }, []);
 
+  useEffect(() => {
+    if (stops.length === 0) return;
+    const unsubscribe = subscribeBusLocationUpdate((payload: any) => {
+      const raw = Array.isArray(payload) ? payload : [payload];
+      const live = raw.map(b => normalizeAPIBus(b, stops));
+      setBuses(live);
+    });
+    return unsubscribe;
+  }, [stops]);
+
   const allStopNames = useMemo(() => {
-    const names = new Set(seedStops.map((s) => s.name));
+    const names = new Set(stops.map((s) => s.name));
     return Array.from(names).sort();
-  }, [seedStops]);
+  }, [stops]);
 
   const suggestions = useMemo(() => {
     if (!search.trim()) return [];

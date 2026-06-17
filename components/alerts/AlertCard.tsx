@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import type { Alert } from '@/lib/mock-data';
+import type { Alert } from '@/lib/types';
 
 interface AlertCardProps {
   alert: Alert;

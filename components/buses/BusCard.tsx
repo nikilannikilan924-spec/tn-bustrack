@@ -1,6 +1,6 @@
 import { memo, useMemo } from 'react';
 import Link from 'next/link';
-import type { Bus } from '@/lib/mock-data';
+import type { Bus } from '@/lib/types';
 import { useLanguage } from '@/lib/LanguageContext';
 import { haversineKm, formatKm } from '@/lib/distance';
 import { predictOccupancy, getCrowdLevel } from '@/lib/prediction';

@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState, useRef } from 'react';
-import { getMockDashboardData, type Bus } from '@/lib/mock-data';
+import { useEffect, useMemo, useState } from 'react';
 import { subscribeBusLocationUpdate } from '@/lib/socket';
+import { fetchBuses, fetchStops, normalizeAPIBus } from '@/lib/types';
+import type { Bus } from '@/lib/types';
 import Link from 'next/link';
 
 const statusBadge: Record<Bus['status'], { label: string; style: string }> = {
@@ -12,17 +13,26 @@ const statusBadge: Record<Bus['status'], { label: string; style: string }> = {
 };
 
 export function AdminBusTable() {
-  const { buses: seedBuses } = getMockDashboardData();
-  const [buses, setBuses] = useState<Bus[]>(seedBuses);
+  const [buses, setBuses] = useState<Bus[]>([]);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Bus['status'] | 'all'>('all');
 
   useEffect(() => {
-    const unsubscribe = subscribeBusLocationUpdate((payload: Bus[] | { buses: Bus[] }) => {
-      const liveBuses = Array.isArray(payload) ? payload : payload.buses;
-      if (Array.isArray(liveBuses)) setBuses(liveBuses);
+    fetchStops().then(async allStops => {
+      const apiBuses = await fetchBuses(allStops);
+      setBuses(apiBuses);
     });
-    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    fetchStops().then(allStops => {
+      const unsubscribe = subscribeBusLocationUpdate((payload: any) => {
+        const raw = Array.isArray(payload) ? payload : [payload];
+        const live = raw.map(b => normalizeAPIBus(b, allStops));
+        setBuses(live);
+      });
+      return unsubscribe;
+    });
   }, []);
 
   const filtered = useMemo(() => {
