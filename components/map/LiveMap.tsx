@@ -55,7 +55,7 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      minZoom: 7
+      minZoom: 5
     }).addTo(map);
 
     L.control.zoom({ position: 'topleft' }).addTo(map);

@@ -23,6 +23,18 @@ export default function SetupPage() {
   const [message, setMessage] = useState('');
   const [savedBusId, setSavedBusId] = useState('');
 
+  const clearForm = () => {
+    setBusNumber('');
+    setBusName('');
+    setOrigin('');
+    setDestination('');
+    setSeatCapacity('50');
+    setStops([{ name: '', lat: '', lng: '' }]);
+    setBulkText('');
+    setMessage('');
+    setSavedBusId('');
+  };
+
   const addStop = () => setStops([...stops, { name: '', lat: '', lng: '' }]);
   const removeStop = (i: number) => {
     if (stops.length > 1) setStops(stops.filter((_, idx) => idx !== i));
@@ -71,14 +83,7 @@ export default function SetupPage() {
     setMessage('');
 
     try {
-      // 1. Delete all existing routes
-      const routesRes = await fetch('/api/routes');
-      const routes = await routesRes.json();
-      for (const r of routes) {
-        await fetch(`/api/routes/${r.id}`, { method: 'DELETE' });
-      }
-
-      // 2. Create new route
+      // 1. Create new route
       const routeBody = {
         number: busNumber,
         name: busName || `${origin} to ${destination}`,
@@ -269,10 +274,16 @@ export default function SetupPage() {
         </div>
       )}
 
-      <button onClick={save} disabled={saving}
-        className="w-full rounded-2xl bg-[#0EA5E9] py-4 text-sm font-bold text-white shadow-lg transition hover:bg-[#0284C7] disabled:opacity-50">
-        {saving ? getVal('setup.saving') : getVal('setup.save')}
-      </button>
+      <div className="flex gap-3">
+        <button onClick={clearForm}
+          className="flex-1 rounded-2xl border border-[var(--border)] bg-white/50 py-4 text-sm font-bold text-[var(--text-secondary)] shadow-lg transition hover:bg-white/80">
+          {lang === 'ta' ? 'படிவத்தை அழி' : 'Clear Form'}
+        </button>
+        <button onClick={save} disabled={saving}
+          className="flex-1 rounded-2xl bg-[#0EA5E9] py-4 text-sm font-bold text-white shadow-lg transition hover:bg-[#0284C7] disabled:opacity-50">
+          {saving ? getVal('setup.saving') : getVal('setup.save')}
+        </button>
+      </div>
     </div>
   );
 }
