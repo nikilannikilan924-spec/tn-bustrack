@@ -3,11 +3,23 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import type { Bus, Route } from '@/lib/mock-data';
+
+interface LiveBus {
+  id: string;
+  number: string;
+  routeName: string;
+  currentStop: string;
+  status: 'running' | 'delayed' | 'stopped';
+  speed: number;
+  latitude: number;
+  longitude: number;
+  seatsAvailable: number;
+  seatCapacity: number;
+  nextStops: { name: string; distKm: string; etaMin: number }[];
+}
 
 interface LiveMapProps {
-  buses: Bus[];
-  routes: Route[];
+  buses: LiveBus[];
   onBusSelect: (id: string) => void;
 }
 
@@ -18,21 +30,16 @@ const tnBounds = L.latLngBounds(
   [13.5, 80.5]
 );
 
-function statusColor(status: Bus['status']) {
+function statusColor(status: string) {
   if (status === 'delayed') return '#FFB300';
   if (status === 'stopped') return '#64748B';
   return '#22C55E';
 }
 
-const routeColors: Record<string, string> = {
-  TNSTC: '#0EA5E9'
-};
-
-export default function LiveMap({ buses, routes, onBusSelect }: LiveMapProps) {
+export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
-  const routesLayerRef = useRef<L.LayerGroup | null>(null);
   const popupRef = useRef<L.Popup | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -56,7 +63,6 @@ export default function LiveMap({ buses, routes, onBusSelect }: LiveMapProps) {
     L.control.zoom({ position: 'topleft' }).addTo(map);
 
     markersLayerRef.current = L.layerGroup().addTo(map);
-    routesLayerRef.current = L.layerGroup().addTo(map);
 
     map.on('load', () => setLoaded(true));
 
@@ -95,15 +101,17 @@ export default function LiveMap({ buses, routes, onBusSelect }: LiveMapProps) {
       marker.on('click', () => {
         onBusSelect(bus.id);
         if (popupRef.current) popupRef.current.remove();
+        const statusLabel = bus.status === 'running' ? 'இயக்கத்தில்' : bus.status === 'delayed' ? 'தாமதம்' : 'நிறுத்தப்பட்டது';
         popupRef.current = L.popup({ closeButton: true, offset: [0, -10] })
           .setLatLng([bus.latitude, bus.longitude])
           .setContent(`
             <div style="font-family: sans-serif; line-height: 1.4; min-width: 160px;">
               <p style="font-weight: 700; margin: 0 0 4px;">${bus.number}</p>
-              <p style="margin: 0; font-size: 12px; color: #555;">${bus.route.origin} &rarr; ${bus.route.destination}</p>
-              <p style="margin: 4px 0 0; font-size: 12px; color: #555;">நிலை: ${bus.status === 'running' ? 'இயக்கத்தில்' : bus.status === 'delayed' ? 'தாமதம்' : 'நிறுத்தப்பட்டது'}</p>
+              <p style="margin: 0; font-size: 12px; color: #555;">${bus.routeName}</p>
+              <p style="margin: 4px 0 0; font-size: 12px; color: #555;">நிலை: ${statusLabel}</p>
               <p style="margin: 0; font-size: 12px; color: #555;">வேகம்: ${bus.speed} km/h</p>
               <p style="margin: 0; font-size: 12px; color: #555;">இருக்கைகள்: ${bus.seatsAvailable}/${bus.seatCapacity}</p>
+              ${bus.nextStops[0] ? `<p style="margin: 0; font-size: 12px; color: #555;">அடுத்த நிறுத்தம்: ${bus.nextStops[0].name} (${bus.nextStops[0].distKm} km)</p>` : ''}
             </div>
           `)
           .addTo(mapRef.current!);
@@ -111,21 +119,7 @@ export default function LiveMap({ buses, routes, onBusSelect }: LiveMapProps) {
     });
   }, [buses, onBusSelect]);
 
-  useEffect(() => {
-    if (!routesLayerRef.current) return;
-    const layer = routesLayerRef.current;
 
-    layer.clearLayers();
-
-    routes.forEach((route) => {
-      const coords = route.stops.map((s) => [s.lat, s.lng] as L.LatLngTuple);
-      L.polyline(coords, {
-        color: routeColors[route.operator] || '#0EA5E9',
-        weight: 4,
-        opacity: 0.7
-      }).addTo(layer);
-    });
-  }, [routes]);
 
   return (
     <div className="relative h-[calc(100vh-5rem)] min-h-[500px] overflow-hidden rounded-3xl border border-[var(--border)] bg-white/80 shadow-lg shadow-[var(--shadow-heavy)] max-sm:h-[calc(100dvh-4rem)] max-sm:rounded-2xl max-sm:min-h-[400px]">

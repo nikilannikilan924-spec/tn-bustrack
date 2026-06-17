@@ -2,36 +2,78 @@
 
 import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
-import { getMockDashboardData, type Bus } from '@/lib/mock-data';
 import { subscribeBusLocationUpdate } from '@/lib/socket';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { useLanguage } from '@/lib/LanguageContext';
 import { haversineKm, formatKm } from '@/lib/distance';
 
+type BusStatus = 'running' | 'delayed' | 'stopped';
+
+interface LiveBus {
+  id: string;
+  number: string;
+  routeName: string;
+  currentStop: string;
+  status: BusStatus;
+  speed: number;
+  latitude: number;
+  longitude: number;
+  seatsAvailable: number;
+  seatCapacity: number;
+  nextStops: { name: string; distKm: string; etaMin: number }[];
+}
+
 const LiveMap = dynamic(() => import('@/components/map/LiveMap'), { ssr: false });
+
+function normalizeBus(raw: any): LiveBus {
+  return {
+    id: raw.busId || raw.id,
+    number: raw.busNumber || raw.number || raw.busId || 'Unknown',
+    routeName: raw.route || raw.routeName || 'Unknown Route',
+    currentStop: raw.currentStop || 'Unknown',
+    status: raw.status || (raw.speed > 0 ? 'running' : 'stopped'),
+    speed: raw.speed || 0,
+    latitude: raw.lat ?? raw.latitude ?? 0,
+    longitude: raw.lng ?? raw.longitude ?? 0,
+    seatsAvailable: raw.seats ?? raw.seatsAvailable ?? 0,
+    seatCapacity: raw.seatCapacity ?? raw.totalSeats ?? 42,
+    nextStops: raw.nextStops || [],
+  };
+}
 
 export function MapBoard() {
   const { t } = useLanguage();
-  const { buses: seedBuses, routes } = useMemo(() => getMockDashboardData(), []);
-  const [buses, setBuses] = useState<Bus[]>(seedBuses);
+  const [buses, setBuses] = useState<LiveBus[]>([]);
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [stopSearch, setStopSearch] = useState('');
 
   useEffect(() => {
-    const unsubscribe = subscribeBusLocationUpdate((payload: Bus[] | { buses: Bus[] }) => {
-      const liveBuses = Array.isArray(payload) ? payload : payload.buses;
-      if (Array.isArray(liveBuses)) {
-        setBuses(liveBuses);
+    const unsubscribe = subscribeBusLocationUpdate((payload: any) => {
+      const raw = Array.isArray(payload) ? payload : [payload];
+      if (Array.isArray(raw)) {
+        setBuses(raw.map(normalizeBus));
       }
     });
 
-    return unsubscribe;
+    fetchBuses();
+    const interval = setInterval(fetchBuses, 5000);
+    return () => { unsubscribe(); clearInterval(interval); };
   }, []);
+
+  async function fetchBuses() {
+    try {
+      const res = await fetch('/api/buses');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setBuses(data.map(normalizeBus));
+      }
+    } catch (_) {}
+  }
 
   const allStopNames = useMemo(() => {
     const names = new Set<string>();
-    buses.forEach((b) => b.route.stops.forEach((s) => names.add(s.name)));
+    buses.forEach((b) => { if (b.currentStop) names.add(b.currentStop); });
     return Array.from(names).sort();
   }, [buses]);
 
@@ -39,15 +81,15 @@ export function MapBoard() {
     const q = stopSearch.trim().toLowerCase();
     if (!q) return buses;
     return buses.filter((b) =>
-      b.route.stops.some((s) => s.name.toLowerCase().includes(q))
+      (b.currentStop || '').toLowerCase().includes(q)
     );
   }, [buses, stopSearch]);
 
   const running = filteredBuses.filter((bus) => bus.status === 'running').length;
 
-  const findBackupBus = (bus: Bus): Bus | null => {
+  const findBackupBus = (bus: LiveBus): LiveBus | null => {
     if (bus.seatsAvailable > 0) return null;
-    return filteredBuses.find((b) => b.routeId === bus.routeId && b.id !== bus.id && b.seatsAvailable > 0) ?? null;
+    return filteredBuses.find((b) => b.id !== bus.id && b.seatsAvailable > 0) ?? null;
   };
 
   return (
@@ -67,7 +109,7 @@ export function MapBoard() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.45fr_0.55fr] lg:gap-6">
-        <LiveMap buses={filteredBuses} routes={routes} onBusSelect={setSelectedBusId} />
+        <LiveMap buses={filteredBuses} onBusSelect={setSelectedBusId} />
         <aside className="space-y-4">
           <div className="glass rounded-3xl p-5 shadow-lg shadow-[var(--shadow-heavy)] max-sm:rounded-2xl max-sm:p-4">
             <Input
@@ -161,19 +203,13 @@ export function MapBoard() {
                             )}
                           </div>
                           <p className="mt-0.5 truncate text-[10px] text-[var(--text-secondary)]">
-                            {bus.route.origin} → {bus.route.destination}
+                            {bus.routeName}
                           </p>
                         </div>
                         <div className="ml-3 shrink-0 text-right">
                           <div className="font-jetbrains text-xs text-[var(--text-secondary)]">{bus.speed} km/h</div>
                           <div className="font-jetbrains text-[10px] text-[var(--text-muted)]">
-                            {(() => {
-                              const nextIdx = bus.route.stops.findIndex((s) => s.name === bus.currentStop) + 1;
-                              if (nextIdx < bus.route.stops.length) {
-                                return formatKm(haversineKm(bus.latitude, bus.longitude, bus.route.stops[nextIdx].lat, bus.route.stops[nextIdx].lng));
-                              }
-                              return '';
-                            })()}
+                            {bus.nextStops[0] ? `${bus.nextStops[0].distKm} km` : ''}
                           </div>
                         </div>
                       </button>

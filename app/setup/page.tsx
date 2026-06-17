@@ -75,17 +75,10 @@ export default function SetupPage() {
       const routesRes = await fetch('/api/routes');
       const routes = await routesRes.json();
       for (const r of routes) {
-        await fetch(`/api/routes/${r._id || r.id}`, { method: 'DELETE' });
+        await fetch(`/api/routes/${r.id}`, { method: 'DELETE' });
       }
 
-      // 2. Delete all existing buses
-      const busesRes = await fetch('/api/buses');
-      const buses = await busesRes.json();
-      for (const b of buses) {
-        await fetch(`/api/buses/${b._id || b.id}`, { method: 'DELETE' });
-      }
-
-      // 3. Create new route
+      // 2. Create new route
       const routeBody = {
         number: busNumber,
         name: busName || `${origin} to ${destination}`,
@@ -107,31 +100,24 @@ export default function SetupPage() {
         body: JSON.stringify(routeBody)
       });
       const newRoute = await routeRes.json();
-      const routeId = newRoute._id || newRoute.id;
 
-      // 4. Create new bus
-      const busRes = await fetch('/api/buses', {
+      // 3. Create new bus
+      const busRes = await fetch('/api/bus/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           number: busNumber,
-          routeId,
-          latitude: stops[0].lat,
-          longitude: stops[0].lng,
-          status: 'stopped',
+          routeName: busName || `${origin} to ${destination}`,
+          latitude: parseFloat(stops[0].lat),
+          longitude: parseFloat(stops[0].lng),
           seatCapacity: parseInt(seatCapacity) || 50,
-          seatsAvailable: parseInt(seatCapacity) || 50,
-          passengersInside: 0,
-          speed: 0,
-          pathIndex: 0,
-          currentStop: stops[0].name
         })
       });
-      const newBus = await busRes.json();
-      const busId = newBus._id || newBus.id;
+      const busData = await busRes.json();
+      const busId = busNumber;
       setSavedBusId(busId);
 
-      setMessage(lang === 'ta' ? 'வெற்றி! மேலே உள்ள Bus IDஐ நகலெடுக்கவும்' : 'Success! Copy the Bus ID above');
+      setMessage(lang === 'ta' ? 'வெற்றி! ESP32 இல் இந்த Bus ID ஐப் பயன்படுத்தவும்' : 'Success! Use this Bus ID in ESP32 firmware');
     } catch (e) {
       setMessage(lang === 'ta' ? 'பிழை: சேமிக்க முடியவில்லை' : 'Error: Could not save');
     }

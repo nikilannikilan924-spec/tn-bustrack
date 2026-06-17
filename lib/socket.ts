@@ -11,14 +11,20 @@ export function getSocket() {
       path: '/socket.io',
       transports: ['websocket']
     });
+
+    socket.on('connect', () => {
+      socket?.emit('watchAll');
+    });
   }
   return socket;
 }
 
 export function subscribeBusLocationUpdate(callback: (payload: any) => void) {
   const client = getSocket();
-  client?.on('bus-location-update', callback);
+  client?.on('currentBuses', callback);
+  client?.on('busUpdate', (bus: any) => callback([bus]));
   return () => {
-    client?.off('bus-location-update', callback);
+    client?.off('currentBuses', callback);
+    client?.off('busUpdate', callback);
   };
 }

@@ -3,599 +3,259 @@ require('dotenv').config();
 const path = require('path');
 const express = require('express');
 const http = require('http');
-const cors = require('cors');
-const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
-const mongoose = require('mongoose');
 const { Server } = require('socket.io');
+const cors = require('cors');
 const next = require('next');
-
-const Bus = require('./models/bus');
-const Route = require('./models/route');
-const Stop = require('./models/stop');
-const Alert = require('./models/alert');
-const User = require('./models/user');
-const seed = require('../data/tn-bustrack.seed.json');
 
 const dev = process.env.NODE_ENV !== 'production';
 const nextApp = next({ dev, dir: path.join(__dirname, '..') });
 const handle = nextApp.getRequestHandler();
 
-const port = Number(process.env.PORT || 3000);
-const jwtSecret = process.env.JWT_SECRET || 'tn-bustrack-secret';
-const mongoUri = process.env.MONGODB_URI || '';
-
 const app = express();
-app.use(cors({ origin: true, credentials: true }));
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: '*', methods: ['GET', 'POST'] }
+});
+
+app.use(cors());
 app.use(express.json());
 
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
+// ── IN-MEMORY STORES ────────────────────────────────────────
+let busPositions = {};
+let busConfigs = {};
+let gpsHistory = {};
 
-const memory = {
-  routes: seed.routes.map((route) => ({ ...route })),
-  buses: seed.buses.map((bus) => ({ ...bus, tickCount: 0 })),
-  stops: seed.routes.flatMap((route) => route.stops.map((stop) => ({ ...stop, routeId: route.id }))),
-  alerts: seed.alerts.map((alert) => ({ ...alert })),
-  users: [],
-  reports: []
+// ── HELPERS ─────────────────────────────────────────────────
+function deg2rad(deg) { return deg * (Math.PI / 180); }
+
+function getDistanceKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = deg2rad(lat2 - lat1);
+  const dLng = deg2rad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(deg2rad(lat1)) *
+    Math.cos(deg2rad(lat2)) *
+    Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+const STOPS = {
+  'namakkal-salem': [
+    { name: 'Namakkal Bus Stand', lat: 11.2189, lng: 78.1670 },
+    { name: 'Mohanur', lat: 11.2531, lng: 78.1231 },
+    { name: 'Tiruchengode', lat: 11.3865, lng: 77.8942 },
+    { name: 'Rasipuram', lat: 11.4596, lng: 78.1735 },
+    { name: 'Salem Bus Stand', lat: 11.6643, lng: 78.1460 },
+  ],
+  'coimbatore-tirupur': [
+    { name: 'Coimbatore Central', lat: 11.0168, lng: 76.9558 },
+    { name: 'Kuniyamuthur', lat: 10.9838, lng: 76.9346 },
+    { name: 'Mettupalayam', lat: 11.2988, lng: 76.9400 },
+    { name: 'Tirupur Bus Stand', lat: 11.1085, lng: 77.3411 },
+  ]
 };
 
-function isDbReady() {
-  return mongoose.connection.readyState === 1;
+function getNearestStop(lat, lng, routeKey) {
+  const stops = STOPS[routeKey] || STOPS['namakkal-salem'];
+  let nearest = stops[0];
+  let minDist = Infinity;
+  stops.forEach(stop => {
+    const d = getDistanceKm(lat, lng, stop.lat, stop.lng);
+    if (d < minDist) { minDist = d; nearest = stop; }
+  });
+  return { stop: nearest, distKm: minDist };
 }
 
-function signToken(user) {
-  return jwt.sign({ sub: String(user._id || user.id), email: user.email, name: user.name }, jwtSecret, {
-    expiresIn: '7d'
+function getNextStops(currentStopName, routeKey, busLat, busLng) {
+  const stops = STOPS[routeKey] || STOPS['namakkal-salem'];
+  const curIdx = stops.findIndex(s => s.name === currentStopName);
+  if (curIdx === -1) return [];
+  return stops.slice(curIdx + 1).map(stop => {
+    const distKm = getDistanceKm(busLat, busLng, stop.lat, stop.lng);
+    const etaMin = Math.round((distKm / 40) * 60);
+    return { name: stop.name, distKm: distKm.toFixed(1), etaMin };
   });
 }
-
-function authMiddleware(req, res, next) {
-  const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
-  if (!token) return res.status(401).json({ error: 'Missing token' });
-  try {
-    req.user = jwt.verify(token, jwtSecret);
-    return next();
-  } catch {
-    return res.status(401).json({ error: 'Invalid token' });
-  }
-}
-
-function buildPath(stops) {
-  const points = [];
-  for (let index = 0; index < stops.length - 1; index += 1) {
-    const start = stops[index];
-    const end = stops[index + 1];
-    for (let step = 0; step < 12; step += 1) {
-      const ratio = step / 12;
-      points.push({
-        lat: Number((start.lat + (end.lat - start.lat) * ratio).toFixed(6)),
-        lng: Number((start.lng + (end.lng - start.lng) * ratio).toFixed(6))
-      });
-    }
-  }
-  if (stops.length) {
-    const last = stops[stops.length - 1];
-    points.push({ lat: last.lat, lng: last.lng });
-  }
-  return points;
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-async function seedDatabase() {
-  if (!isDbReady()) return;
-  const [routeCount, busCount, stopCount, alertCount, userCount] = await Promise.all([
-    Route.countDocuments(),
-    Bus.countDocuments(),
-    Stop.countDocuments(),
-    Alert.countDocuments(),
-    User.countDocuments()
-  ]);
-  if (!routeCount) await Route.insertMany(seed.routes);
-  if (!stopCount) await Stop.insertMany(memory.stops);
-  if (!busCount) await Bus.insertMany(seed.buses.map((bus) => ({ ...bus, tickCount: 0 })));
-  if (!alertCount) await Alert.insertMany(seed.alerts);
-  if (!userCount) {
-    await User.create({
-      name: 'Admin',
-      email: 'admin@tnbustrack.local',
-      passwordHash: await bcrypt.hash('password123', 10),
-      favorites: []
-    });
-  }
-}
-
-async function bootstrap() {
-  if (mongoUri) {
-    try {
-      await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 4000 });
-      await seedDatabase();
-      console.log('MongoDB connected');
-    } catch (error) {
-      console.warn('MongoDB connection failed, falling back to memory store:', error.message);
-    }
-  }
-}
-
-function normalizeRoute(route) {
-  return { ...route, stops: route.stops || [] };
-}
-
-async function getRoutesData() {
-  if (isDbReady()) {
-    const routes = await Route.find().lean();
-    return routes.map(normalizeRoute);
-  }
-  return memory.routes.map(normalizeRoute);
-}
-
-async function getStopsData() {
-  if (isDbReady()) return Stop.find().lean();
-  return memory.stops;
-}
-
-async function getAlertsData() {
-  if (isDbReady()) return Alert.find().sort({ createdAt: -1 }).lean();
-  return memory.alerts;
-}
-
-async function getUsersData() {
-  if (isDbReady()) return User.find().lean();
-  return memory.users;
-}
-
-async function getBusesData() {
-  const routes = await getRoutesData();
-  const routeMap = new Map(routes.map((route) => [route.id, route]));
-  if (isDbReady()) {
-    const buses = await Bus.find().lean();
-    return buses.map((bus) => ({ ...bus, route: routeMap.get(bus.routeId) || null }));
-  }
-  return memory.buses.map((bus) => ({ ...bus, route: routeMap.get(bus.routeId) || null }));
-}
-
-async function getBusById(id) {
-  const buses = await getBusesData();
-  return buses.find((bus) => String(bus._id || bus.id) === id) || null;
-}
-
-async function getLiveLocation(id) {
-  const bus = await getBusById(id);
-  if (!bus) return null;
-  return {
-    id: bus._id || bus.id,
-    latitude: bus.latitude,
-    longitude: bus.longitude,
-    status: bus.status,
-    updatedAt: new Date().toISOString()
-  };
-}
-
-async function tickBuses() {
-  const routes = await getRoutesData();
-  const routeMap = new Map(routes.map((route) => [route.id, route]));
-
-  if (isDbReady()) {
-    const buses = await Bus.find();
-    for (const bus of buses) {
-      if (bus.lastRealUpdate) continue;
-      const route = routeMap.get(bus.routeId);
-      if (!route?.stops?.length) continue;
-      const path = buildPath(route.stops);
-      const nextPathIndex = (bus.pathIndex + (bus.status === 'stopped' ? (bus.tickCount % 3 === 0 ? 1 : 0) : bus.status === 'delayed' ? (bus.tickCount % 2 === 0 ? 1 : 0) : 1)) % path.length;
-      const point = path[nextPathIndex];
-      const stopIndex = Math.min(Math.floor(nextPathIndex / 12), route.stops.length - 1);
-      const remainingStops = route.stops.length - stopIndex - 1;
-      bus.pathIndex = nextPathIndex;
-      bus.latitude = point.lat;
-      bus.longitude = point.lng;
-      bus.currentStop = route.stops[stopIndex].name;
-      bus.etaMinutes = clamp(remainingStops * 4 + (bus.status === 'delayed' ? 4 : 0) + (bus.tickCount % 2), 2, 240);
-      bus.seatsAvailable = clamp(bus.seatsAvailable + (bus.status === 'running' ? -1 : bus.status === 'delayed' ? 1 : 0), 0, bus.seatCapacity);
-      bus.speed = bus.status === 'stopped' ? 0 : clamp(bus.speed + (Math.round(Math.random() * 10) - 5), 0, 80);
-      const passengerDelta = bus.status === 'stopped' ? Math.floor(Math.random() * 4) : Math.floor(Math.random() * 2);
-      bus.passengersInside = clamp(bus.passengersInside + (Math.random() > 0.5 ? passengerDelta : -passengerDelta), 0, bus.seatCapacity);
-      bus.seatsAvailable = bus.seatCapacity - bus.passengersInside;
-      bus.tickCount += 1;
-      await bus.save();
-    }
-    return getBusesData();
-  }
-
-  for (let index = 0; index < memory.buses.length; index += 1) {
-    const bus = memory.buses[index];
-    if (bus.lastRealUpdate) continue;
-    const route = routeMap.get(bus.routeId);
-    if (!route?.stops?.length) continue;
-    const path = buildPath(route.stops);
-    const movement = bus.status === 'stopped' ? (bus.tickCount % 3 === 0 ? 1 : 0) : bus.status === 'delayed' ? (bus.tickCount % 2 === 0 ? 1 : 0) : 1;
-    bus.pathIndex = (bus.pathIndex + movement) % path.length;
-    const point = path[bus.pathIndex];
-    const stopIndex = Math.min(Math.floor(bus.pathIndex / 12), route.stops.length - 1);
-    const remainingStops = route.stops.length - stopIndex - 1;
-    bus.latitude = point.lat;
-    bus.longitude = point.lng;
-    bus.currentStop = route.stops[stopIndex].name;
-    bus.etaMinutes = clamp(remainingStops * 4 + (bus.status === 'delayed' ? 4 : 0) + (bus.tickCount % 2), 2, 240);
-    bus.speed = bus.status === 'stopped' ? 0 : clamp(bus.speed + (Math.round(Math.random() * 10) - 5), 0, 80);
-    const passengerDelta = bus.status === 'stopped' ? Math.floor(Math.random() * 4) : Math.floor(Math.random() * 2);
-    bus.passengersInside = clamp(bus.passengersInside + (Math.random() > 0.5 ? passengerDelta : -passengerDelta), 0, bus.seatCapacity);
-    bus.seatsAvailable = bus.seatCapacity - bus.passengersInside;
-    bus.tickCount += 1;
-  }
-  return getBusesData();
-}
-
-async function createResource(model, memoryKey, body) {
-  if (isDbReady()) return model.create(body);
-  const item = { id: `${memoryKey}-${Date.now()}`, ...body };
-  memory[memoryKey].push(item);
-  return item;
-}
-
-async function updateResource(model, memoryKey, id, body) {
-  if (isDbReady()) return model.findByIdAndUpdate(id, body, { new: true });
-  const items = memory[memoryKey];
-  const index = items.findIndex((item) => String(item._id || item.id) === id);
-  if (index === -1) return null;
-  items[index] = { ...items[index], ...body };
-  return items[index];
-}
-
-async function deleteResource(model, memoryKey, id) {
-  if (isDbReady()) return model.findByIdAndDelete(id);
-  const items = memory[memoryKey];
-  const index = items.findIndex((item) => String(item._id || item.id) === id);
-  if (index === -1) return null;
-  return items.splice(index, 1)[0];
-}
-
-app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'TN BusTrack API' }));
-
-app.get('/api/routes', async (_req, res) => res.json(await getRoutesData()));
-app.get('/api/routes/:id', async (req, res) => {
-  const routes = await getRoutesData();
-  const route = routes.find((item) => String(item._id || item.id) === req.params.id);
-  if (!route) return res.status(404).json({ error: 'Route not found' });
-  res.json(route);
-});
-app.post('/api/routes', async (req, res) => res.status(201).json(await createResource(Route, 'routes', req.body)));
-app.put('/api/routes/:id', async (req, res) => {
-  const updated = await updateResource(Route, 'routes', req.params.id, req.body);
-  if (!updated) return res.status(404).json({ error: 'Route not found' });
-  res.json(updated);
-});
-app.delete('/api/routes/:id', async (req, res) => {
-  const deleted = await deleteResource(Route, 'routes', req.params.id);
-  if (!deleted) return res.status(404).json({ error: 'Route not found' });
-  res.json({ deleted: true });
-});
-
-app.get('/api/stops', async (_req, res) => res.json(await getStopsData()));
-app.get('/api/stops/:id', async (req, res) => {
-  const stops = await getStopsData();
-  const stop = stops.find((item) => String(item._id || item.id) === req.params.id);
-  if (!stop) return res.status(404).json({ error: 'Stop not found' });
-  res.json(stop);
-});
-app.post('/api/stops', async (req, res) => res.status(201).json(await createResource(Stop, 'stops', req.body)));
-app.put('/api/stops/:id', async (req, res) => {
-  const updated = await updateResource(Stop, 'stops', req.params.id, req.body);
-  if (!updated) return res.status(404).json({ error: 'Stop not found' });
-  res.json(updated);
-});
-app.delete('/api/stops/:id', async (req, res) => {
-  const deleted = await deleteResource(Stop, 'stops', req.params.id);
-  if (!deleted) return res.status(404).json({ error: 'Stop not found' });
-  res.json({ deleted: true });
-});
-
-app.get('/api/buses', async (_req, res) => res.json(await getBusesData()));
-app.get('/api/buses/:id', async (req, res) => {
-  const bus = await getBusById(req.params.id);
-  if (!bus) return res.status(404).json({ error: 'Bus not found' });
-  res.json(bus);
-});
-app.get('/api/buses/:id/location', async (req, res) => {
-  const location = await getLiveLocation(req.params.id);
-  if (!location) return res.status(404).json({ error: 'Bus not found' });
-  res.json(location);
-});
-app.post('/api/buses', async (req, res) => res.status(201).json(await createResource(Bus, 'buses', req.body)));
-app.put('/api/buses/:id', async (req, res) => {
-  const updated = await updateResource(Bus, 'buses', req.params.id, req.body);
-  if (!updated) return res.status(404).json({ error: 'Bus not found' });
-  res.json(updated);
-});
-app.delete('/api/buses/:id', async (req, res) => {
-  const deleted = await deleteResource(Bus, 'buses', req.params.id);
-  if (!deleted) return res.status(404).json({ error: 'Bus not found' });
-  res.json({ deleted: true });
-});
-
-app.get('/api/alerts', async (_req, res) => res.json(await getAlertsData()));
-app.get('/api/alerts/:id', async (req, res) => {
-  const alerts = await getAlertsData();
-  const alert = alerts.find((item) => String(item._id || item.id) === req.params.id);
-  if (!alert) return res.status(404).json({ error: 'Alert not found' });
-  res.json(alert);
-});
-app.post('/api/alerts', async (req, res) => res.status(201).json(await createResource(Alert, 'alerts', req.body)));
-app.put('/api/alerts/:id', async (req, res) => {
-  const updated = await updateResource(Alert, 'alerts', req.params.id, req.body);
-  if (!updated) return res.status(404).json({ error: 'Alert not found' });
-  res.json(updated);
-});
-app.delete('/api/alerts/:id', async (req, res) => {
-  const deleted = await deleteResource(Alert, 'alerts', req.params.id);
-  if (!deleted) return res.status(404).json({ error: 'Alert not found' });
-  res.json({ deleted: true });
-});
-
-app.get('/api/users', async (_req, res) => res.json(await getUsersData()));
-app.get('/api/users/:id', async (req, res) => {
-  if (isDbReady()) {
-    const user = await User.findById(req.params.id).lean();
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    return res.json(user);
-  }
-  const user = memory.users.find((item) => String(item.id) === req.params.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  return res.json(user);
-});
-app.post('/api/users', async (req, res) => {
-  const { name, email, password } = req.body || {};
-  if (!name || !email || !password) return res.status(400).json({ error: 'name, email, and password are required' });
-  if (isDbReady()) {
-    const user = await User.create({ name, email, passwordHash: await bcrypt.hash(password, 10), favorites: [] });
-    return res.status(201).json(user);
-  }
-  const user = { id: `user-${Date.now()}`, name, email, passwordHash: await bcrypt.hash(password, 10), favorites: [] };
-  memory.users.push(user);
-  return res.status(201).json(user);
-});
-app.put('/api/users/:id', async (req, res) => {
-  const updated = await updateResource(User, 'users', req.params.id, req.body);
-  if (!updated) return res.status(404).json({ error: 'User not found' });
-  res.json(updated);
-});
-app.delete('/api/users/:id', async (req, res) => {
-  const deleted = await deleteResource(User, 'users', req.params.id);
-  if (!deleted) return res.status(404).json({ error: 'User not found' });
-  res.json({ deleted: true });
-});
-
-app.post('/api/auth/register', async (req, res) => {
-  const { name, email, password } = req.body || {};
-  if (!name || !email || !password) return res.status(400).json({ error: 'name, email, and password are required' });
-  const existing = isDbReady() ? await User.findOne({ email }) : memory.users.find((item) => item.email === email);
-  if (existing) return res.status(409).json({ error: 'Email already registered' });
-  const passwordHash = await bcrypt.hash(password, 10);
-  const user = isDbReady()
-    ? await User.create({ name, email, passwordHash, favorites: [] })
-    : (() => {
-        const created = { id: `user-${Date.now()}`, name, email, passwordHash, favorites: [] };
-        memory.users.push(created);
-        return created;
-      })();
-  res.status(201).json({ user: { id: user._id || user.id, name: user.name, email: user.email }, token: signToken(user) });
-});
-
-app.post('/api/auth/login', async (req, res) => {
-  const { email, password } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
-  const user = isDbReady() ? await User.findOne({ email }) : memory.users.find((item) => item.email === email);
-  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-  const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
-  res.json({ user: { id: user._id || user.id, name: user.name, email: user.email }, token: signToken(user) });
-});
-
-app.get('/api/me', authMiddleware, (req, res) => {
-  res.json({ user: req.user });
-});
-
-// ESP32 fetches its assigned route config
-app.get('/api/device/config', async (_req, res) => {
-  const buses = await getBusesData();
-  const bus = buses[0];
-  if (!bus) return res.json({ configured: false, message: 'No bus found. Use /setup to create one.' });
-  const route = bus.route || null;
-  res.json({
-    configured: true,
-    bus: {
-      id: bus._id || bus.id,
-      number: bus.number,
-      seatCapacity: bus.seatCapacity,
-      latitude: bus.latitude,
-      longitude: bus.longitude,
-      status: bus.status
-    },
-    route: route ? {
-      id: route._id || route.id,
-      origin: route.origin,
-      destination: route.destination,
-      stops: (route.stops || []).map((s) => ({
-        name: s.name,
-        lat: s.lat,
-        lng: s.lng,
-        sequence: s.sequence
-      }))
-    } : null
-  });
-});
-
-// ESP32 sends passenger count (no GPS needed)
-app.post('/api/bus/passengers', async (req, res) => {
-  const { busId, passengersInside } = req.body || {};
-  if (!busId || passengersInside == null) {
-    return res.status(400).json({ error: 'busId and passengersInside are required' });
-  }
-
-  const bus = isDbReady()
-    ? await Bus.findById(busId)
-    : memory.buses.find((b) => String(b._id || b.id) === busId);
-
-  if (!bus) return res.status(404).json({ error: 'Bus not found' });
-
-  bus.passengersInside = clamp(Number(passengersInside), 0, bus.seatCapacity);
-  bus.seatsAvailable = bus.seatCapacity - bus.passengersInside;
-  bus.lastRealUpdate = new Date().toISOString();
-
-  if (isDbReady()) await bus.save();
-
-  const liveBuses = await getBusesData();
-  io.emit('bus-location-update', liveBuses);
-
-  res.json({ ok: true, receivedAt: new Date().toISOString() });
-});
-
-// Hardware ingest endpoint — ESP32 sends data here
-app.post('/api/bus/location', async (req, res) => {
-  const { busId, latitude, longitude, speed, seatsAvailable, passengersInside } = req.body || {};
-  if (!busId || latitude == null || longitude == null) {
-    return res.status(400).json({ error: 'busId, latitude, and longitude are required' });
-  }
-
-  const bus = isDbReady()
-    ? await Bus.findById(busId)
-    : memory.buses.find((b) => String(b._id || b.id) === busId);
-
-  if (!bus) return res.status(404).json({ error: 'Bus not found' });
-
-  bus.latitude = Number(latitude);
-  bus.longitude = Number(longitude);
-  bus.speed = speed != null ? Number(speed) : bus.speed;
-  bus.status = Number(speed) > 0 ? 'running' : 'stopped';
-
-  if (seatsAvailable != null) {
-    bus.seatsAvailable = clamp(Number(seatsAvailable), 0, bus.seatCapacity);
-    bus.passengersInside = bus.seatCapacity - bus.seatsAvailable;
-  }
-  if (passengersInside != null) {
-    bus.passengersInside = Number(passengersInside);
-    bus.seatsAvailable = bus.seatCapacity - bus.passengersInside;
-  }
-
-  bus.lastRealUpdate = new Date().toISOString();
-
-  if (isDbReady()) await bus.save();
-
-  const liveBuses = await getBusesData();
-  io.emit('bus-location-update', liveBuses);
-
-  res.json({ ok: true, receivedAt: new Date().toISOString() });
-});
-
-// Report endpoint — passengers report issues
-app.post('/api/report', (req, res) => {
-  const report = { id: `report-${Date.now()}`, ...req.body, reportedAt: new Date().toISOString() };
-  memory.reports.push(report);
-  io.emit('new-report', report);
-  res.status(201).json({ ok: true, id: report.id });
-});
-
-app.get('/api/report', (_req, res) => {
-  res.json(memory.reports.sort((a, b) => new Date(b.reportedAt).getTime() - new Date(a.reportedAt).getTime()));
-});
-
-io.on('connection', (socket) => {
-  getBusesData().then((buses) => socket.emit('bus-location-update', buses));
-  const timer = setInterval(async () => {
-    const liveBuses = await tickBuses();
-    io.emit('bus-location-update', liveBuses);
-  }, 5000);
-  socket.on('disconnect', () => clearInterval(timer));
-});
-
-// ── Firmware-compatible endpoints ──
-app.get('/health', (_req, res) => res.json({ status: 'ok', busCount: memory.buses.length }));
 
 function findBus(busId) {
-  if (isDbReady()) return Bus.findById(busId);
-  return memory.buses.find((b) => String(b._id || b.id) === busId || b.number === busId);
+  return Object.values(busPositions).find(b => b.busId === busId) || null;
 }
 
-app.post('/api/buses/update', async (req, res) => {
-  const { busId, lat, lng, speed, seats, inside, route } = req.body || {};
-  if (!busId || lat == null || lng == null) {
-    return res.status(400).json({ error: 'busId, lat, lng required' });
-  }
-  const bus = await findBus(busId);
-  if (!bus) return res.status(404).json({ error: 'Bus not found' });
-  bus.latitude = Number(lat);
-  bus.longitude = Number(lng);
-  bus.speed = speed != null ? Number(speed) : bus.speed;
-  bus.status = Number(speed) > 0 ? 'running' : 'stopped';
-  if (seats != null) bus.seatsAvailable = clamp(Number(seats), 0, bus.seatCapacity);
-  if (inside != null) {
-    bus.passengersInside = clamp(Number(inside), 0, bus.seatCapacity);
-    bus.seatsAvailable = bus.seatCapacity - bus.passengersInside;
-  }
-  if (route) bus.routeName = route;
-  bus.lastRealUpdate = new Date().toISOString();
-  if (isDbReady()) await bus.save();
-  const liveBuses = await getBusesData();
-  io.emit('bus-location-update', liveBuses);
-  res.json({ ok: true, receivedAt: new Date().toISOString() });
-});
-
-app.post('/api/buses/count', async (req, res) => {
-  const { busId, inside, seats } = req.body || {};
-  if (!busId || inside == null) return res.status(400).json({ error: 'busId and inside required' });
-  const bus = await findBus(busId);
-  if (!bus) return res.status(404).json({ error: 'Bus not found' });
-  bus.passengersInside = clamp(Number(inside), 0, bus.seatCapacity);
-  bus.seatsAvailable = seats != null ? clamp(Number(seats), 0, bus.seatCapacity) : bus.seatCapacity - bus.passengersInside;
-  bus.lastRealUpdate = new Date().toISOString();
-  if (isDbReady()) await bus.save();
-  const liveBuses = await getBusesData();
-  io.emit('bus-location-update', liveBuses);
-  res.json({ ok: true, receivedAt: new Date().toISOString() });
-});
-
-app.get('/api/config/:id', async (req, res) => {
-  const bus = isDbReady()
-    ? await Bus.findById(req.params.id).lean()
-    : memory.buses.find((b) => String(b._id || b.id) === req.params.id || b.number === req.params.id);
-  if (!bus) return res.status(404).json({ error: 'Bus not found' });
-  res.json({
-    totalSeats: bus.seatCapacity || 42,
-    routeName: bus.routeName || (bus.route ? bus.route.name : 'Default Route'),
-    driverName: bus.driverName || 'Unknown'
-  });
-});
-
-app.post('/api/config/save', async (req, res) => {
-  const { busId, totalSeats, routeName, driverName } = req.body || {};
+// ── ESP32 SENDS GPS DATA ─────────────────────────────────────
+app.post('/api/buses/update', (req, res) => {
+  const { busId, lat, lng, speed, seats, inside, route, gpsFixed } = req.body;
   if (!busId) return res.status(400).json({ error: 'busId required' });
-  const bus = await findBus(busId);
-  if (!bus) return res.status(404).json({ error: 'Bus not found' });
-  if (totalSeats) bus.seatCapacity = Number(totalSeats);
-  if (routeName) bus.routeName = routeName;
-  if (driverName) bus.driverName = driverName;
-  if (isDbReady()) await bus.save();
+
+  const cfg = busConfigs[busId] || {};
+  const routeKey = cfg.routeKey || 'namakkal-salem';
+  const { stop, distKm } = getNearestStop(lat, lng, routeKey);
+  const nextStops = getNextStops(stop.name, routeKey, lat, lng);
+
+  const busData = {
+    busId,
+    lat,
+    lng,
+    speed: speed || 0,
+    seats: seats ?? 42,
+    inside: inside ?? 0,
+    route: route || cfg.routeName || 'Unknown Route',
+    gpsFixed: gpsFixed || false,
+    currentStop: stop.name,
+    distFromStop: distKm.toFixed(2),
+    nextStops,
+    lastUpdate: new Date().toISOString(),
+  };
+
+  busPositions[busId] = busData;
+
+  if (!gpsHistory[busId]) gpsHistory[busId] = [];
+  gpsHistory[busId].push({ lat, lng, t: Date.now() });
+  if (gpsHistory[busId].length > 100) gpsHistory[busId].shift();
+
+  io.to(`bus-${busId}`).emit('busUpdate', busData);
+  io.to('all-buses').emit('busUpdate', busData);
+
   res.json({ ok: true });
 });
 
+// ── ESP32 SENDS COUNT UPDATE ────────────────────────────────
+app.post('/api/buses/count', (req, res) => {
+  const { busId, inside, seats } = req.body;
+  if (!busId) return res.status(400).json({ error: 'busId required' });
+
+  if (busPositions[busId]) {
+    busPositions[busId].inside = inside;
+    busPositions[busId].seats = seats;
+  }
+
+  io.to(`bus-${busId}`).emit('countUpdate', { busId, inside, seats });
+  io.to('all-buses').emit('countUpdate', { busId, inside, seats });
+
+  res.json({ ok: true });
+});
+
+// ── APP: GET ALL LIVE BUSES ──────────────────────────────────
+app.get('/api/buses', (req, res) => {
+  res.json(Object.values(busPositions));
+});
+
+// ── APP: GET SINGLE BUS ──────────────────────────────────────
+app.get('/api/buses/:busId', (req, res) => {
+  const bus = busPositions[req.params.busId];
+  if (bus) return res.json(bus);
+  res.status(404).json({ error: 'Bus not found' });
+});
+
+// ── APP: SAVE BUS CONFIG ─────────────────────────────────────
+app.post('/api/config/save', (req, res) => {
+  const { busId, totalSeats, routeName, routeKey, driverName, busNumber } = req.body;
+  if (!busId) return res.status(400).json({ error: 'busId required' });
+
+  busConfigs[busId] = {
+    busId,
+    totalSeats: totalSeats || 42,
+    routeName: routeName || 'Unknown',
+    routeKey: routeKey || 'namakkal-salem',
+    driverName: driverName || 'Unknown',
+    busNumber: busNumber || busId,
+    updatedAt: new Date().toISOString()
+  };
+
+  io.to(`bus-${busId}`).emit('configUpdate', busConfigs[busId]);
+
+  console.log(`Config saved for ${busId}`);
+  res.json({ ok: true, config: busConfigs[busId] });
+});
+
+// ── APP: GET BUS CONFIG ──────────────────────────────────────
+app.get('/api/config/:busId', (req, res) => {
+  const cfg = busConfigs[req.params.busId];
+  res.json(cfg || { busId: req.params.busId, totalSeats: 42, routeName: 'Default', routeKey: 'namakkal-salem' });
+});
+
+// ── STOPS ────────────────────────────────────────────────────
+app.get('/api/stops/:routeKey', (req, res) => {
+  res.json(STOPS[req.params.routeKey] || []);
+});
+
+// ── SETUP: SAVE ROUTE + BUS ─────────────────────────────────
+const memoryRoutes = [];
+const memoryBuses = [];
+
+app.get('/api/routes', (_req, res) => res.json(memoryRoutes));
+
+app.post('/api/routes', (req, res) => {
+  const route = { id: `route-${Date.now()}`, ...req.body };
+  memoryRoutes.push(route);
+  res.status(201).json(route);
+});
+
+app.delete('/api/routes/:id', (req, res) => {
+  const idx = memoryRoutes.findIndex(r => r.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Route not found' });
+  memoryRoutes.splice(idx, 1);
+  res.json({ deleted: true });
+});
+
+app.post('/api/bus/create', (req, res) => {
+  const bus = { id: `bus-${Date.now()}`, ...req.body };
+  memoryBuses.push(bus);
+  const busId = bus.number || bus.id;
+  busConfigs[busId] = {
+    busId,
+    totalSeats: bus.seatCapacity || 42,
+    routeName: bus.routeName || 'Default',
+    routeKey: 'namakkal-salem',
+    driverName: 'Unknown',
+    busNumber: bus.number || busId,
+    updatedAt: new Date().toISOString()
+  };
+  res.status(201).json({ bus, config: busConfigs[busId] });
+});
+
+// ── HEALTH CHECK ─────────────────────────────────────────────
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    busCount: Object.keys(busPositions).length,
+    uptime: Math.round(process.uptime()) + 's',
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.get('/', (req, res) => {
+  res.json({ name: 'TN BusTrack API', version: '2.0', status: 'running' });
+});
+
+// ── SOCKET.IO ────────────────────────────────────────────────
+io.on('connection', (socket) => {
+  console.log('Client connected:', socket.id);
+
+  socket.on('watchAll', () => {
+    socket.join('all-buses');
+    socket.emit('currentBuses', Object.values(busPositions));
+  });
+
+  socket.on('watchBus', (busId) => {
+    socket.join(`bus-${busId}`);
+    if (busPositions[busId]) {
+      socket.emit('busUpdate', busPositions[busId]);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
+  });
+});
+
+// ── SERVE NEXT.JS ────────────────────────────────────────────
 app.all('*', (req, res) => handle(req, res));
 
-bootstrap().finally(() => {
-  nextApp.prepare().then(() => {
-    server.on('error', (error) => {
-      if (error.code === 'EADDRINUSE') {
-        console.error(`Port ${port} is already in use.`);
-        process.exit(1);
-      }
-      throw error;
-    });
-    server.listen(port, () => {
-      console.log(`TN BusTrack production server running on http://localhost:${port}`);
-    });
+// ── START ────────────────────────────────────────────────────
+const PORT = Number(process.env.PORT || 3000);
+
+nextApp.prepare().then(() => {
+  server.listen(PORT, () => {
+    console.log(`TN BusTrack production server running on http://localhost:${PORT}`);
   });
 });
