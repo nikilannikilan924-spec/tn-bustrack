@@ -2,7 +2,6 @@
 
 import { useEffect, useRef } from 'react';
 import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 
 interface LiveBus {
   id: string;
@@ -23,8 +22,6 @@ interface LiveMapProps {
   onBusSelect: (id: string) => void;
 }
 
-const defaultCenter: L.LatLngExpression = [13.0827, 80.2707];
-
 function statusColor(status: string) {
   if (status === 'delayed') return '#FFB300';
   if (status === 'stopped') return '#64748B';
@@ -39,8 +36,11 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    const map = L.map(containerRef.current, {
-      center: defaultCenter,
+    const container = containerRef.current;
+    container.style.touchAction = 'none';
+
+    const map = L.map(container, {
+      center: [13.0827, 80.2707],
       zoom: 8,
       zoomControl: true,
     });
@@ -79,8 +79,9 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
   }, [buses, onBusSelect]);
 
   return (
-    <div className="relative h-[calc(100vh-5rem)] min-h-[500px] rounded-3xl border border-[var(--border)] bg-white/80 shadow-lg shadow-[var(--shadow-heavy)] max-sm:h-[calc(100dvh-4rem)] max-sm:rounded-2xl max-sm:min-h-[400px]">
-      <div ref={containerRef} className="h-full w-full" />
-    </div>
+    <div
+      ref={containerRef}
+      style={{ width: '100%', height: 'calc(100vh - 5rem)', minHeight: '500px', touchAction: 'none' }}
+    />
   );
 }

@@ -64,6 +64,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className={`${spaceGrotesk.variable} ${orbitron.variable} ${jetbrainsMono.variable} ${notoSansTamil.variable} bg-[var(--bg-primary)] text-[var(--text-primary)]`}>
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
         <LanguageProvider>
           <AuthProvider>
             <div className="min-h-screen min-h-dvh" style={{ background: 'var(--bg-primary)' }}>
