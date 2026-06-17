@@ -155,6 +155,88 @@
       ]
     }
   ],
-  "buses": [],
-  "alerts": []
+  "buses": [
+    {
+      "id": "bus-828",
+      "number": "TN07 828 1122",
+      "routeId": "route-828",
+      "latitude": 12.9240,
+      "longitude": 80.1003,
+      "status": "running",
+      "speed": 32,
+      "seatCapacity": 42,
+      "passengersInside": 12,
+      "seatsAvailable": 30,
+      "currentStop": "Tambaram",
+      "etaMinutes": 18,
+      "pathIndex": 0,
+      "tickCount": 0
+    },
+    {
+      "id": "bus-5d",
+      "number": "TN07 5D 1001",
+      "routeId": "route-5d",
+      "latitude": 13.0927,
+      "longitude": 80.2874,
+      "status": "running",
+      "speed": 28,
+      "seatCapacity": 36,
+      "passengersInside": 20,
+      "seatsAvailable": 16,
+      "currentStop": "Broadway Bus Terminus",
+      "etaMinutes": 14,
+      "pathIndex": 0,
+      "tickCount": 0
+    },
+    {
+      "id": "bus-570",
+      "number": "TN07 570 2003",
+      "routeId": "route-570",
+      "latitude": 13.0732,
+      "longitude": 80.2087,
+      "status": "delayed",
+      "speed": 8,
+      "seatCapacity": 48,
+      "passengersInside": 35,
+      "seatsAvailable": 13,
+      "currentStop": "CMBT",
+      "etaMinutes": 40,
+      "pathIndex": 0,
+      "tickCount": 0
+    },
+    {
+      "id": "bus-m23",
+      "number": "TN07 M23 4004",
+      "routeId": "route-m23",
+      "latitude": 13.0827,
+      "longitude": 80.2750,
+      "status": "stopped",
+      "speed": 0,
+      "seatCapacity": 52,
+      "passengersInside": 8,
+      "seatsAvailable": 44,
+      "currentStop": "Chennai Central",
+      "etaMinutes": 220,
+      "pathIndex": 0,
+      "tickCount": 0
+    }
+  ],
+  "alerts": [
+    {
+      "id": "alert-1",
+      "title": "Route M23 Delayed",
+      "message": "Chennai to Madurai bus delayed by 20 mins due to traffic near Villupuram",
+      "severity": "WARNING",
+      "routeId": "route-m23",
+      "createdAt": "2025-06-17T08:30:00Z"
+    },
+    {
+      "id": "alert-2",
+      "title": "New Route 828 Express",
+      "message": "Tambaram to T Nagar route 828 now running express service during peak hours",
+      "severity": "INFO",
+      "routeId": "route-828",
+      "createdAt": "2025-06-17T07:00:00Z"
+    }
+  ]
 }
