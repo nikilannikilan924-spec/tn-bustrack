@@ -25,10 +25,7 @@ interface LiveMapProps {
 
 const defaultCenter: L.LatLngExpression = [13.0827, 80.2707];
 
-const tnBounds = L.latLngBounds(
-  [8.0, 76.2],
-  [13.5, 80.5]
-);
+
 
 function statusColor(status: string) {
   if (status === 'delayed') return '#FFB300';
@@ -59,6 +56,13 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
     }).addTo(map);
 
     L.control.zoom({ position: 'topleft' }).addTo(map);
+
+    map.dragging.enable();
+    map.touchZoom.enable();
+    map.doubleClickZoom.enable();
+    map.scrollWheelZoom.enable();
+    map.boxZoom.enable();
+    map.keyboard.enable();
 
     markersLayerRef.current = L.layerGroup().addTo(map);
 
@@ -120,8 +124,8 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
 
 
   return (
-    <div className="relative h-[calc(100vh-5rem)] min-h-[500px] overflow-hidden rounded-3xl border border-[var(--border)] bg-white/80 shadow-lg shadow-[var(--shadow-heavy)] max-sm:h-[calc(100dvh-4rem)] max-sm:rounded-2xl max-sm:min-h-[400px]">
-      <div ref={containerRef} className="h-full w-full" />
+    <div className="relative h-[calc(100vh-5rem)] min-h-[500px] rounded-3xl border border-[var(--border)] bg-white/80 shadow-lg shadow-[var(--shadow-heavy)] max-sm:h-[calc(100dvh-4rem)] max-sm:rounded-2xl max-sm:min-h-[400px]">
+      <div ref={containerRef} className="h-full w-full" style={{ touchAction: 'none' }} />
 
       {!loaded && (
         <div className="absolute inset-0 z-20 grid place-items-center rounded-3xl border border-[var(--border)] bg-white/80 text-center text-sm text-[var(--text-secondary)] backdrop-blur">
