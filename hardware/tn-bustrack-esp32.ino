@@ -1,19 +1,15 @@
 // ============================================================
-//  TN BusTrack — ESP32 Full Firmware
-//  Hardware: ESP32 38-pin + NEO-6M + HC-SR04 x2 + Relay
-//  Connection: Phone Hotspot → Railway Server
+//  TN BusTrack — ESP32 Firmware (no extra libs required)
+//  Hardware: ESP32 + NEO-6M + HC-SR04 x2 + Relay
 // ============================================================
 
 #include <WiFi.h>
 #include <HTTPClient.h>
-#include <TinyGPS++.h>
-#include <HardwareSerial.h>
-#include <ArduinoJson.h>
 
 // ── CHANGE THESE 3 LINES ────────────────────────────────────
-const char* WIFI_SSID     = "YourHotspotName";
-const char* WIFI_PASSWORD = "YourPassword";
-const char* BUS_ID        = "TN07 828 1122";   // any name works
+const char* WIFI_SSID     = "YourHotspotName";   // phone hotspot name
+const char* WIFI_PASSWORD = "YourPassword";       // hotspot password
+const char* BUS_ID        = "TN07 828 1122";      // any name works
 // ────────────────────────────────────────────────────────────
 
 // ── SERVER URLs ─────────────────────────────────────────────
@@ -23,118 +19,157 @@ const char* CONFIG_URL = "https://tn-bustrack-production.up.railway.app/api/conf
 // ────────────────────────────────────────────────────────────
 
 // ── PIN DEFINITIONS ─────────────────────────────────────────
-#define GPS_RX_PIN    16
-#define GPS_TX_PIN    17
-#define TRIG_A        12
-#define ECHO_A        14
-#define TRIG_B        27
-#define ECHO_B        15
-#define RELAY_PIN     13
-#define LED_PIN        2
-#define RESET_BTN     32
+#define GPS_RX 16
+#define GPS_TX 17
+#define TRIG_A 12
+#define ECHO_A 14
+#define TRIG_B 27
+#define ECHO_B 15
+#define RELAY_A 13
+#define RELAY_B 4
+#define THRESHOLD 30
 // ────────────────────────────────────────────────────────────
 
-// ── BUS CONFIG (loaded from server) ─────────────────────────
-int    totalSeats    = 42;
-String routeName     = "Default Route";
-String driverName    = "Unknown";
+// ── BUS CONFIG ──────────────────────────────────────────────
+int totalSeats = 42;
+String routeName = "Default";
+
+// ── GPS ─────────────────────────────────────────────────────
+float gpsLat = 0, gpsLng = 0;
+int gpsSpeed = 0;
+unsigned long lastGpsFix = 0;
+bool gpsFixed = false;
+HardwareSerial gps(2);
 
 // ── PASSENGER COUNT ─────────────────────────────────────────
-volatile int  insideCount     = 0;
-volatile int  seatsAvailable  = 42;
-volatile bool countChanged    = false;
-
-// ── SENSOR STATE ────────────────────────────────────────────
-volatile bool     sensorA_active = false;
-volatile bool     sensorB_active = false;
-volatile uint32_t sensorA_time   = 0;
-volatile uint32_t sensorB_time   = 0;
-
-// ── GPS ──────────────────────────────────────────────────────
-TinyGPSPlus      gps;
-HardwareSerial   gpsSerial(1);
-double  currentLat  = 11.341023;
-double  currentLng  = 77.717284;
-double  currentSpd  = 0.0;
-bool    gpsFixed    = false;
-
-// ── TIMING ──────────────────────────────────────────────────
-unsigned long lastGPSSend     = 0;
-unsigned long lastConfigFetch = 0;
-unsigned long lastWiFiCheck   = 0;
+int passengers = 0;
+int state = 0;
+unsigned long lastSend = 0;
 
 // ────────────────────────────────────────────────────────────
-//  INTERRUPT SERVICE ROUTINES
+//  READ DISTANCE (HC-SR04)
 // ────────────────────────────────────────────────────────────
-void IRAM_ATTR onEchoA() {
-  sensorA_active = true;
-  sensorA_time   = millis();
-}
-void IRAM_ATTR onEchoB() {
-  sensorB_active = true;
-  sensorB_time   = millis();
-}
-
-// ────────────────────────────────────────────────────────────
-//  LED HELPER
-// ────────────────────────────────────────────────────────────
-void blinkLED(int times) {
-  for (int i = 0; i < times; i++) {
-    digitalWrite(LED_PIN, HIGH);
-    delay(120);
-    digitalWrite(LED_PIN, LOW);
-    delay(120);
-  }
-}
-
-// ────────────────────────────────────────────────────────────
-//  GET DISTANCE (cm) FROM HC-SR04
-// ────────────────────────────────────────────────────────────
-long getDistance(int trigPin, int echoPin) {
-  digitalWrite(trigPin, LOW);
+long readDistance(int trig, int echo) {
+  digitalWrite(trig, LOW);
   delayMicroseconds(2);
-  digitalWrite(trigPin, HIGH);
+  digitalWrite(trig, HIGH);
   delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
-
-  long duration = pulseIn(echoPin, HIGH, 25000);
+  digitalWrite(trig, LOW);
+  long duration = pulseIn(echo, HIGH, 30000);
   if (duration == 0) return 999;
-
-  long dist = (duration * 0.034) / 2;
-  if (dist < 3 || dist > 200) return 999;
-  return dist;
+  long d = (duration * 0.034) / 2;
+  return d > 500 ? 999 : d;
 }
 
 // ────────────────────────────────────────────────────────────
-//  WIFI CONNECT
+//  PARSE NMEA LAT/LNG
 // ────────────────────────────────────────────────────────────
-void connectWiFi() {
-  Serial.print("Connecting to hotspot: ");
-  Serial.println(WIFI_SSID);
+void parseLatLng(const String& latStr, const String& lngStr, char latDir, char lngDir) {
+  if (latStr.length() == 0 || lngStr.length() == 0) return;
+  float lat = atof(latStr.c_str());
+  int latDeg = int(lat / 100);
+  gpsLat = latDeg + (lat - latDeg * 100) / 60;
+  if (latDir == 'S') gpsLat = -gpsLat;
 
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  float lng = atof(lngStr.c_str());
+  int lngDeg = int(lng / 100);
+  gpsLng = lngDeg + (lng - lngDeg * 100) / 60;
+  if (lngDir == 'W') gpsLng = -gpsLng;
+}
 
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-    delay(500);
-    Serial.print(".");
-    attempts++;
-  }
+// ────────────────────────────────────────────────────────────
+//  READ GPS (raw NMEA parsing, no library needed)
+// ────────────────────────────────────────────────────────────
+void readGps() {
+  while (gps.available()) {
+    String line = gps.readStringUntil('\n');
 
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nWiFi Connected! ");
-    Serial.print("IP: ");
-    Serial.println(WiFi.localIP());
-    blinkLED(3);
-  } else {
-    Serial.println("\nWiFi FAILED! Will retry...");
-    blinkLED(5);
+    if (line.startsWith("$GPGGA") || line.startsWith("$GNGGA")) {
+      char buf[80];
+      line.toCharArray(buf, 80);
+      char* ptr = buf;
+      int field = 0;
+      char latStr[16] = "", lngStr[16] = "", latDir = 'N', lngDir = 'E';
+      int fix = 0;
+      while (char* token = strtok(ptr, ",")) {
+        ptr = NULL;
+        if (field == 2) strcpy(latStr, token);
+        if (field == 3 && strlen(token) > 0) latDir = token[0];
+        if (field == 4) strcpy(lngStr, token);
+        if (field == 5 && strlen(token) > 0) lngDir = token[0];
+        if (field == 6) fix = atoi(token);
+        field++;
+      }
+      parseLatLng(latStr, lngStr, latDir, lngDir);
+      if (fix > 0) {
+        gpsFixed = true;
+        lastGpsFix = millis();
+      }
+    }
+
+    if (line.startsWith("$GPGLL") || line.startsWith("$GNGLL")) {
+      char buf[80];
+      line.toCharArray(buf, 80);
+      char* ptr = buf;
+      int field = 0;
+      char latStr[16] = "", lngStr[16] = "", latDir = 'N', lngDir = 'E';
+      char status = 'V';
+      while (char* token = strtok(ptr, ",")) {
+        ptr = NULL;
+        if (field == 1) strcpy(latStr, token);
+        if (field == 2 && strlen(token) > 0) latDir = token[0];
+        if (field == 3) strcpy(lngStr, token);
+        if (field == 4 && strlen(token) > 0) lngDir = token[0];
+        if (field == 6) status = token[0];
+        field++;
+      }
+      if (status == 'A') {
+        parseLatLng(latStr, lngStr, latDir, lngDir);
+        gpsFixed = true;
+        lastGpsFix = millis();
+      }
+    }
+
+    if (line.startsWith("$GPVTG") || line.startsWith("$GNVTG")) {
+      char buf[80];
+      line.toCharArray(buf, 80);
+      char* ptr = buf;
+      int field = 0;
+      while (char* token = strtok(ptr, ",")) {
+        ptr = NULL;
+        if (field == 7) { gpsSpeed = round(atof(token) * 1.852); break; }
+        field++;
+      }
+    }
   }
 }
 
 // ────────────────────────────────────────────────────────────
-//  FETCH CONFIG FROM SERVER
+//  SIMPLE JSON PARSER (no library needed)
+// ────────────────────────────────────────────────────────────
+String extractJsonStr(const String& json, const String& key) {
+  String search = "\"" + key + "\":\"";
+  int start = json.indexOf(search);
+  if (start < 0) return "";
+  start += search.length();
+  int end = json.indexOf("\"", start);
+  if (end < 0) return "";
+  return json.substring(start, end);
+}
+
+int extractJsonInt(const String& json, const String& key) {
+  String search = "\"" + key + "\":";
+  int start = json.indexOf(search);
+  if (start < 0) return 0;
+  start += search.length();
+  int end = json.indexOf(",", start);
+  if (end < 0) end = json.indexOf("}", start);
+  if (end < 0) return 0;
+  return json.substring(start, end).toInt();
+}
+
+// ────────────────────────────────────────────────────────────
+//  FETCH BUS CONFIG FROM SERVER
 // ────────────────────────────────────────────────────────────
 void fetchConfig() {
   if (WiFi.status() != WL_CONNECTED) return;
@@ -142,135 +177,85 @@ void fetchConfig() {
   String url = String(CONFIG_URL) + String(BUS_ID);
   HTTPClient http;
   http.begin(url);
-  http.setTimeout(5000);
-
   int code = http.GET();
+
   if (code == 200) {
     String body = http.getString();
-    StaticJsonDocument<512> doc;
-    if (!deserializeJson(doc, body)) {
-      totalSeats   = doc["totalSeats"] | 42;
-      routeName    = doc["routeName"]  | "Default";
-      driverName   = doc["driverName"] | "Unknown";
-      seatsAvailable = totalSeats - insideCount;
+    int seats = extractJsonInt(body, "totalSeats");
+    if (seats > 0) totalSeats = seats;
+    String name = extractJsonStr(body, "routeName");
+    if (name.length() > 0) routeName = name;
 
-      Serial.println("Config loaded ");
-      Serial.println("Seats: " + String(totalSeats));
-      Serial.println("Route: " + routeName);
-    }
+    Serial.print("Config loaded — Seats: ");
+    Serial.print(totalSeats);
+    Serial.print("  Route: ");
+    Serial.println(routeName);
   } else {
-    Serial.println("Config fetch skipped (using defaults)");
+    Serial.println("Config not found, using defaults");
   }
   http.end();
 }
 
 // ────────────────────────────────────────────────────────────
-//  SEND GPS DATA TO SERVER
+//  SEND GPS + COUNT TO SERVER
 // ────────────────────────────────────────────────────────────
-void sendGPSData() {
+void sendLocation() {
   if (WiFi.status() != WL_CONNECTED) return;
-
-  StaticJsonDocument<256> doc;
-  doc["busId"]    = BUS_ID;
-  doc["lat"]      = currentLat;
-  doc["lng"]      = currentLng;
-  doc["speed"]    = currentSpd;
-  doc["seats"]    = seatsAvailable;
-  doc["inside"]   = insideCount;
-  doc["route"]    = routeName;
-  doc["gpsFixed"] = gpsFixed;
-
-  String json;
-  serializeJson(doc, json);
 
   HTTPClient http;
   http.begin(GPS_URL);
   http.addHeader("Content-Type", "application/json");
-  http.setTimeout(4000);
 
-  int code = http.POST(json);
+  String body = "{\"busId\":\"" + String(BUS_ID) + "\""
+    + ",\"lat\":" + String(gpsLat, 6)
+    + ",\"lng\":" + String(gpsLng, 6)
+    + ",\"speed\":" + String(gpsSpeed)
+    + ",\"seats\":" + String(totalSeats - passengers)
+    + ",\"inside\":" + String(passengers)
+    + ",\"route\":\"" + routeName + "\""
+    + ",\"gpsFixed\":" + (gpsFixed ? "true" : "false")
+    + "}";
 
+  int code = http.POST(body);
+
+  Serial.print("GPS ");
   if (code == 200 || code == 201) {
-    Serial.println("GPS sent   LAT:" + String(currentLat, 6) +
-                   "  LNG:" + String(currentLng, 6) +
-                   "  Seats:" + String(seatsAvailable));
-    digitalWrite(RELAY_PIN, LOW);
-    delay(80);
-    digitalWrite(RELAY_PIN, HIGH);
+    Serial.print("OK  ");
   } else {
-    Serial.println("GPS send failed: " + String(code));
+    Serial.print("FAIL ");
   }
+  if (gpsFixed) {
+    Serial.print(" LAT:" + String(gpsLat, 4));
+    Serial.print(" LNG:" + String(gpsLng, 4));
+    Serial.print(" " + String(gpsSpeed) + "km/h");
+  } else {
+    Serial.print(" GPS:searching...");
+  }
+  Serial.print(" Pass:" + String(passengers));
+  Serial.print(" Seats:" + String(totalSeats - passengers));
+  Serial.println();
+
   http.end();
 }
 
 // ────────────────────────────────────────────────────────────
-//  SEND COUNT ONLY
+//  SEND COUNT ONLY (instant)
 // ────────────────────────────────────────────────────────────
 void sendCountOnly() {
   if (WiFi.status() != WL_CONNECTED) return;
 
-  StaticJsonDocument<128> doc;
-  doc["busId"]  = BUS_ID;
-  doc["inside"] = insideCount;
-  doc["seats"]  = seatsAvailable;
-
-  String json;
-  serializeJson(doc, json);
-
   HTTPClient http;
   http.begin(COUNT_URL);
   http.addHeader("Content-Type", "application/json");
-  http.setTimeout(3000);
-  http.POST(json);
+
+  String body = "{\"busId\":\"" + String(BUS_ID) + "\""
+    + ",\"inside\":" + String(passengers)
+    + ",\"seats\":" + String(totalSeats - passengers)
+    + "}";
+
+  int code = http.POST(body);
+  Serial.println("Count sent -> " + String(code) + "  Inside:" + String(passengers));
   http.end();
-
-  Serial.println("Count sent instantly   Inside:" +
-                 String(insideCount) + "  Seats:" +
-                 String(seatsAvailable));
-}
-
-// ────────────────────────────────────────────────────────────
-//  PROCESS PASSENGER COUNT
-// ────────────────────────────────────────────────────────────
-void processCount() {
-  uint32_t now = millis();
-
-  if (sensorA_active && sensorB_active) {
-    uint32_t diff = (sensorA_time < sensorB_time)
-                    ? sensorB_time - sensorA_time
-                    : sensorA_time - sensorB_time;
-
-    if (diff < 3000) {
-      if (sensorA_time < sensorB_time) {
-        insideCount++;
-        seatsAvailable = max(0, totalSeats - insideCount);
-        Serial.println(" ENTERED  Inside:" + String(insideCount) +
-                       "  Seats:" + String(seatsAvailable));
-        blinkLED(1);
-        countChanged = true;
-      } else {
-        insideCount = max(0, insideCount - 1);
-        seatsAvailable = totalSeats - insideCount;
-        Serial.println(" EXITED   Inside:" + String(insideCount) +
-                       "  Seats:" + String(seatsAvailable));
-        blinkLED(2);
-        countChanged = true;
-      }
-    }
-    sensorA_active = false;
-    sensorB_active = false;
-    sensorA_time   = 0;
-    sensorB_time   = 0;
-  }
-
-  if (sensorA_active && now - sensorA_time > 4000) {
-    sensorA_active = false;
-    sensorA_time   = 0;
-  }
-  if (sensorB_active && now - sensorB_time > 4000) {
-    sensorB_active = false;
-    sensorB_time   = 0;
-  }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -278,92 +263,81 @@ void processCount() {
 // ────────────────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
-  delay(1000);
+  gps.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
 
-  Serial.println("\n============================");
-  Serial.println("  TN BusTrack Firmware v2.0");
-  Serial.println("============================");
+  pinMode(TRIG_A, OUTPUT);
+  pinMode(ECHO_A, INPUT);
+  pinMode(TRIG_B, OUTPUT);
+  pinMode(ECHO_B, INPUT);
+  pinMode(RELAY_A, OUTPUT);
+  pinMode(RELAY_B, OUTPUT);
+  digitalWrite(RELAY_A, HIGH);
+  digitalWrite(RELAY_B, HIGH);
 
-  pinMode(LED_PIN,   OUTPUT);
-  pinMode(RELAY_PIN, OUTPUT);
-  pinMode(TRIG_A,    OUTPUT);
-  pinMode(ECHO_A,    INPUT);
-  pinMode(TRIG_B,    OUTPUT);
-  pinMode(ECHO_B,    INPUT);
-  pinMode(RESET_BTN, INPUT_PULLUP);
-  digitalWrite(RELAY_PIN, HIGH);
+  Serial.print("Connecting to WiFi...");
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  int tries = 0;
+  while (WiFi.status() != WL_CONNECTED && tries < 40) {
+    delay(500);
+    Serial.print(".");
+    tries++;
+  }
 
-  attachInterrupt(digitalPinToInterrupt(ECHO_A), onEchoA, RISING);
-  attachInterrupt(digitalPinToInterrupt(ECHO_B), onEchoB, RISING);
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi connected");
+    Serial.print("IP: "); Serial.println(WiFi.localIP());
+    fetchConfig();
+  } else {
+    Serial.println("\nWiFi failed!");
+  }
 
-  gpsSerial.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
-  Serial.println("GPS serial started");
-
-  connectWiFi();
-  fetchConfig();
-
-  Serial.println("\n System ready!");
-  Serial.println("Bus: " + String(BUS_ID));
-  Serial.println("Seats: " + String(totalSeats));
-  Serial.println("Take GPS near window for fix...\n");
-  blinkLED(3);
+  Serial.print("Bus ID: ");
+  Serial.println(BUS_ID);
+  Serial.println("Ready.\n");
 }
 
 // ────────────────────────────────────────────────────────────
 //  MAIN LOOP
 // ────────────────────────────────────────────────────────────
 void loop() {
-  uint32_t now = millis();
+  readGps();
 
-  while (gpsSerial.available()) {
-    gps.encode(gpsSerial.read());
+  long dA = readDistance(TRIG_A, ECHO_A);
+  long dB = readDistance(TRIG_B, ECHO_B);
+  bool a = dA < THRESHOLD;
+  bool b = dB < THRESHOLD;
+
+  if (state == 3) {
+    if (!a && !b) state = 0;
+    delay(100);
+    return;
   }
-  if (gps.location.isValid()) {
-    currentLat = gps.location.lat();
-    currentLng = gps.location.lng();
-    currentSpd = gps.speed.kmph();
-    if (!gpsFixed) {
-      gpsFixed = true;
-      Serial.println(" GPS FIXED!  LAT:" + String(currentLat, 6) +
-                     "  LNG:" + String(currentLng, 6));
-      blinkLED(5);
+
+  if (!a && !b) {
+    state = 0;
+  } else if (state == 0) {
+    if (a && !b) state = 1;
+    else if (b && !a) state = 2;
+  } else if (a && b) {
+    if (state == 1) {
+      passengers++;
+      state = 3;
+      Serial.print("ENTER "); Serial.println(passengers);
+      sendCountOnly();
+      digitalWrite(RELAY_A, LOW); delay(100); digitalWrite(RELAY_A, HIGH);
+    } else if (state == 2) {
+      passengers--; if (passengers < 0) passengers = 0;
+      state = 3;
+      Serial.print("EXIT  "); Serial.println(passengers);
+      sendCountOnly();
+      digitalWrite(RELAY_B, LOW); delay(100); digitalWrite(RELAY_B, HIGH);
     }
   }
 
-  processCount();
-
-  if (countChanged) {
-    countChanged = false;
-    sendCountOnly();
+  if (WiFi.status() == WL_CONNECTED && millis() - lastSend > 10000) {
+    lastSend = millis();
+    sendLocation();
   }
 
-  if (now - lastGPSSend >= 2000) {
-    sendGPSData();
-    lastGPSSend = now;
-  }
-
-  if (now - lastConfigFetch >= 300000) {
-    fetchConfig();
-    lastConfigFetch = now;
-  }
-
-  if (now - lastWiFiCheck >= 30000) {
-    if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("WiFi dropped, reconnecting...");
-      connectWiFi();
-    }
-    lastWiFiCheck = now;
-  }
-
-  if (digitalRead(RESET_BTN) == LOW) {
-    uint32_t held = millis();
-    while (digitalRead(RESET_BTN) == LOW) delay(50);
-    if (millis() - held > 3000) {
-      insideCount    = 0;
-      seatsAvailable = totalSeats;
-      Serial.println(" Count RESET to 0");
-      blinkLED(5);
-      countChanged = true;
-    }
-  }
+  delay(100);
 }
