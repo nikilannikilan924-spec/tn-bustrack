@@ -9,6 +9,14 @@ interface Stop {
   lng: string;
 }
 
+interface ConfiguredBus {
+  busId: string;
+  totalSeats: number;
+  routeName: string;
+  driverName: string;
+  busNumber: string;
+}
+
 export default function SetupPage() {
   const { t, lang } = useLanguage();
 
@@ -22,6 +30,26 @@ export default function SetupPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [savedBusId, setSavedBusId] = useState('');
+  const [configuredBuses, setConfiguredBuses] = useState<ConfiguredBus[]>([]);
+
+  useEffect(() => { fetchConfiguredBuses(); }, []);
+
+  async function fetchConfiguredBuses() {
+    try {
+      const res = await fetch('/api/config');
+      if (res.ok) setConfiguredBuses(await res.json());
+    } catch (_) {}
+  }
+
+  async function deleteBus(busId: string) {
+    try {
+      await fetch(`/api/buses/${busId}`, { method: 'DELETE' });
+      setMessage(lang === 'ta' ? `${busId} நீக்கப்பட்டது` : `${busId} removed`);
+      fetchConfiguredBuses();
+    } catch (_) {
+      setMessage('Error deleting bus');
+    }
+  }
 
   const clearForm = () => {
     setBusNumber('');
@@ -255,6 +283,28 @@ export default function SetupPage() {
       {message && (
         <div className={`rounded-2xl p-4 text-sm font-medium ${message.includes('Error') || message.includes('பிழை') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
           {message}
+        </div>
+      )}
+
+      {configuredBuses.length > 0 && (
+        <div className="rounded-3xl bg-white/80 p-6 shadow-lg backdrop-blur-xl sm:p-8">
+          <h2 className="font-semibold text-[var(--text-primary)]">
+            {lang === 'ta' ? 'கட்டமைக்கப்பட்ட பேருந்துகள்' : 'Configured Buses'}
+          </h2>
+          <div className="mt-4 space-y-2">
+            {configuredBuses.map((cfg) => (
+              <div key={cfg.busId} className="flex items-center justify-between rounded-xl bg-[var(--overlay-subtle)] px-4 py-3">
+                <div>
+                  <span className="text-sm font-medium text-[var(--text-primary)]">{cfg.busId}</span>
+                  <span className="ml-2 text-xs text-[var(--text-secondary)]">{cfg.routeName}</span>
+                </div>
+                <button onClick={() => deleteBus(cfg.busId)}
+                  className="rounded-lg bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-500/20">
+                  {lang === 'ta' ? 'அகற்று' : 'Remove'}
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

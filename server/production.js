@@ -146,6 +146,8 @@ app.get('/api/buses/:busId', (req, res) => {
   res.status(404).json({ error: 'Bus not found' });
 });
 
+
+
 // ── APP: SAVE BUS CONFIG ─────────────────────────────────────
 app.post('/api/config/save', (req, res) => {
   const { busId, totalSeats, routeName, routeKey, driverName, busNumber } = req.body;
@@ -213,12 +215,29 @@ app.post('/api/bus/create', (req, res) => {
   res.status(201).json({ bus, config: busConfigs[busId] });
 });
 
+const deletedBuses = new Set();
+
+app.delete('/api/buses/:busId', (req, res) => {
+  const busId = req.params.busId;
+  deletedBuses.add(busId);
+  delete busPositions[busId];
+  delete busConfigs[busId];
+  delete gpsHistory[busId];
+  io.to('all-buses').emit('busRemoved', busId);
+  res.json({ ok: true, removed: busId });
+});
+
+app.get('/api/config', (_req, res) => {
+  res.json(Object.values(busConfigs));
+});
+
 // ── BACKWARD-COMPATIBLE ENDPOINTS (old firmware) ────────────
 app.post('/api/bus/location', (req, res) => {
   const { busId, latitude, longitude, speed, passengersInside, seatsAvailable } = req.body;
   if (!busId || latitude == null || longitude == null) {
     return res.status(400).json({ error: 'busId, latitude, longitude required' });
   }
+  if (deletedBuses.has(busId)) return res.status(403).json({ error: 'Bus deleted' });
   const cfg = busConfigs[busId] || {};
   const busData = {
     busId,
