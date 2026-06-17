@@ -227,9 +227,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.get('/', (req, res) => {
-  res.json({ name: 'TN BusTrack API', version: '2.0', status: 'running' });
-});
+
 
 // ── SOCKET.IO ────────────────────────────────────────────────
 io.on('connection', (socket) => {

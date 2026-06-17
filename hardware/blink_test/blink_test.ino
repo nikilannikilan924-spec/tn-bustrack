@@ -11,7 +11,7 @@ const char* locationUrl = "https://tn-bustrack-production.up.railway.app/api/bus
 const char* passengerUrl = "https://tn-bustrack-production.up.railway.app/api/bus/passengers";
 
 // Bus config (fetched from server)
-String busId = "";
+String busId = "M11";
 int seatCapacity = 50;
 
 // GPS - NEO-6M on UART2 (GPIO16 RX, GPIO17 TX)
