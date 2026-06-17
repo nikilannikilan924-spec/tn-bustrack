@@ -269,6 +269,9 @@ app.post('/api/bus/location', (req, res) => {
   }
   if (deletedBuses.has(busId)) return res.status(403).json({ error: 'Bus deleted' });
   const cfg = busConfigs[busId] || {};
+  const routeKey = cfg.routeKey || 'namakkal-salem';
+  const { stop, distKm } = getNearestStop(Number(latitude), Number(longitude), routeKey);
+  const nextStops = getNextStops(stop.name, routeKey, Number(latitude), Number(longitude));
   const busData = {
     busId,
     lat: Number(latitude),
@@ -278,7 +281,9 @@ app.post('/api/bus/location', (req, res) => {
     inside: passengersInside || 0,
     route: cfg.routeName || 'Unknown',
     gpsFixed: true,
-    currentStop: 'Unknown',
+    currentStop: stop.name,
+    distFromStop: distKm.toFixed(2),
+    nextStops,
     lastUpdate: new Date().toISOString(),
   };
   busPositions[busId] = busData;
