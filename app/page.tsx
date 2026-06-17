@@ -1,27 +1,42 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { useLanguage } from '@/lib/LanguageContext';
 import { MapIcon, NearbyIcon, PinIcon } from '@/components/ui/Icons';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
-import { getMockDashboardData, type Bus } from '@/lib/mock-data';
 import { subscribeBusLocationUpdate } from '@/lib/socket';
+
+interface LiveBus {
+  busId: string;
+  lat: number;
+  lng: number;
+  speed: number;
+  currentStop: string;
+}
 
 export default function HomePage() {
   const { t, lang } = useLanguage();
-  const { buses: seedBuses, routes, alerts } = useMemo(() => getMockDashboardData(), []);
-  const [buses, setBuses] = useState<Bus[]>(seedBuses);
+  const [buses, setBuses] = useState<LiveBus[]>([]);
 
   useEffect(() => {
-    const unsub = subscribeBusLocationUpdate((payload: Bus[] | { buses: Bus[] }) => {
-      const liveBuses = Array.isArray(payload) ? payload : payload.buses;
-      if (Array.isArray(liveBuses)) setBuses(liveBuses);
+    fetchBuses();
+    const unsub = subscribeBusLocationUpdate((payload: any) => {
+      const raw = Array.isArray(payload) ? payload : [payload];
+      if (Array.isArray(raw)) setBuses(raw);
     });
     return unsub;
   }, []);
 
-  const recentAlerts = alerts.slice(0, 3);
+  async function fetchBuses() {
+    try {
+      const res = await fetch('/api/buses');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setBuses(data);
+      }
+    } catch (_) {}
+  }
 
   return (
     <div className="space-y-5 pt-4">
@@ -52,7 +67,9 @@ export default function HomePage() {
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
             <Button href="/map">{t('home.liveMap')}</Button>
-            <Button variant="outline" href="/dashboard">{t('home.openBuses')}</Button>
+            <Button variant="outline" href="/setup">
+              {lang === 'ta' ? 'உங்கள் பேருந்தை அமைக்கவும்' : 'Setup Your Bus'}
+            </Button>
             <Button variant="outline" href="/how">
               {lang === 'ta' ? 'எப்படி பயன்படுத்துவது' : 'How to Use'}
             </Button>
@@ -85,49 +102,16 @@ export default function HomePage() {
           </p>
         </a>
 
-        <a href="/stops" className="glass group rounded-3xl p-6 shadow-lg transition hover:shadow-xl">
+        <a href="/setup" className="glass group rounded-3xl p-6 shadow-lg transition hover:shadow-xl">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#22C55E]/10 text-[#22C55E]">
             <PinIcon size={24} />
           </div>
           <h3 className="mt-4 font-semibold text-[var(--text-primary)] group-hover:text-[#22C55E]">
-            {t('stops.title')}
+            {lang === 'ta' ? 'உங்கள் பேருந்தை அமைக்கவும்' : 'Setup Your Bus'}
           </h3>
           <p className="mt-1 text-xs text-[var(--text-secondary)]">
-            {lang === 'ta' ? 'நிறுத்த கால அட்டவணை மற்றும் பேருந்து வருகை நேரம்' : 'Stop timetables and bus arrivals'}
+            {lang === 'ta' ? 'புதிய பேருந்து வழியைச் சேர்க்கவும்' : 'Add a new bus route'}
           </p>
-        </a>
-      </div>
-
-      {recentAlerts.length > 0 && (
-        <section className="rounded-3xl bg-white/80 p-6 shadow-lg backdrop-blur-xl">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-[var(--text-primary)]">{t('alerts.heading')}</h2>
-            <a href="/alerts" className="text-xs text-[#0EA5E9] hover:underline">
-              {lang === 'ta' ? 'அனைத்தும் காண்க' : 'View all'}
-            </a>
-          </div>
-          <div className="mt-4 space-y-2">
-            {recentAlerts.map((alert) => (
-              <div key={alert.id} className="rounded-xl bg-[var(--overlay-subtle)] px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <span className={`h-2 w-2 rounded-full ${
-                    alert.severity === 'CRITICAL' ? 'bg-red-500' : alert.severity === 'WARNING' ? 'bg-amber-500' : 'bg-blue-500'
-                  }`} />
-                  <span className="text-sm font-medium text-[var(--text-primary)]">{alert.title}</span>
-                </div>
-                <p className="mt-1 text-xs text-[var(--text-secondary)]">{alert.message}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <div className="flex justify-center pb-8">
-        <a
-          href="/how"
-          className="rounded-2xl border border-[var(--border)] bg-white/50 px-6 py-3 text-xs font-semibold text-[var(--text-secondary)] transition hover:bg-white/80"
-        >
-          {lang === 'ta' ? ' TN BusTrack பற்றி மேலும் அறிக' : 'Learn more about TN BusTrack'}
         </a>
       </div>
     </div>
