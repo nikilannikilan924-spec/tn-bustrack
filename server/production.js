@@ -516,14 +516,17 @@ io.on('connection', (socket) => {
 // ── Firmware-compatible endpoints ──
 app.get('/health', (_req, res) => res.json({ status: 'ok', busCount: memory.buses.length }));
 
+function findBus(busId) {
+  if (isDbReady()) return Bus.findById(busId);
+  return memory.buses.find((b) => String(b._id || b.id) === busId || b.number === busId);
+}
+
 app.post('/api/buses/update', async (req, res) => {
   const { busId, lat, lng, speed, seats, inside, route } = req.body || {};
   if (!busId || lat == null || lng == null) {
     return res.status(400).json({ error: 'busId, lat, lng required' });
   }
-  const bus = isDbReady()
-    ? await Bus.findById(busId)
-    : memory.buses.find((b) => String(b._id || b.id) === busId);
+  const bus = await findBus(busId);
   if (!bus) return res.status(404).json({ error: 'Bus not found' });
   bus.latitude = Number(lat);
   bus.longitude = Number(lng);
@@ -545,9 +548,7 @@ app.post('/api/buses/update', async (req, res) => {
 app.post('/api/buses/count', async (req, res) => {
   const { busId, inside, seats } = req.body || {};
   if (!busId || inside == null) return res.status(400).json({ error: 'busId and inside required' });
-  const bus = isDbReady()
-    ? await Bus.findById(busId)
-    : memory.buses.find((b) => String(b._id || b.id) === busId);
+  const bus = await findBus(busId);
   if (!bus) return res.status(404).json({ error: 'Bus not found' });
   bus.passengersInside = clamp(Number(inside), 0, bus.seatCapacity);
   bus.seatsAvailable = seats != null ? clamp(Number(seats), 0, bus.seatCapacity) : bus.seatCapacity - bus.passengersInside;
@@ -573,9 +574,7 @@ app.get('/api/config/:id', async (req, res) => {
 app.post('/api/config/save', async (req, res) => {
   const { busId, totalSeats, routeName, driverName } = req.body || {};
   if (!busId) return res.status(400).json({ error: 'busId required' });
-  const bus = isDbReady()
-    ? await Bus.findById(busId)
-    : memory.buses.find((b) => String(b._id || b.id) === busId || b.number === busId);
+  const bus = await findBus(busId);
   if (!bus) return res.status(404).json({ error: 'Bus not found' });
   if (totalSeats) bus.seatCapacity = Number(totalSeats);
   if (routeName) bus.routeName = routeName;
