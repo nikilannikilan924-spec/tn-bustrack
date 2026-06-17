@@ -1,133 +1,129 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { getMockDashboardData, type Bus } from '@/lib/mock-data';
 import { subscribeBusLocationUpdate } from '@/lib/socket';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
-import { BusCard } from '@/components/buses/BusCard';
-import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 import { useLanguage } from '@/lib/LanguageContext';
 
-const operatorFilters = ['All', 'TNSTC'] as const;
+interface LiveBus {
+  id: string;
+  number: string;
+  routeName: string;
+  currentStop: string;
+  status: 'running' | 'delayed' | 'stopped';
+  speed: number;
+  latitude: number;
+  longitude: number;
+  seatsAvailable: number;
+  seatCapacity: number;
+  inside: number;
+}
+
+function normalize(raw: any): LiveBus {
+  return {
+    id: raw.busId || raw.id,
+    number: raw.busNumber || raw.number || raw.busId || 'Unknown',
+    routeName: raw.route || raw.routeName || 'Unknown',
+    currentStop: raw.currentStop || '',
+    status: raw.status || (raw.speed > 0 ? 'running' : 'stopped'),
+    speed: raw.speed || 0,
+    latitude: raw.lat ?? raw.latitude ?? 0,
+    longitude: raw.lng ?? raw.longitude ?? 0,
+    seatsAvailable: raw.seats ?? raw.seatsAvailable ?? 0,
+    seatCapacity: raw.seatCapacity ?? raw.totalSeats ?? 42,
+    inside: raw.inside ?? raw.passengersInside ?? 0,
+  };
+}
 
 export function BusesBoard() {
   const { t, lang } = useLanguage();
-  const { buses: seedBuses } = useMemo(() => getMockDashboardData(), []);
-  const [buses, setBuses] = useState<Bus[]>(seedBuses);
+  const [buses, setBuses] = useState<LiveBus[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedOperator, setSelectedOperator] = useState<(typeof operatorFilters)[number]>('All');
-  const [savedRoutes, setSavedRoutes] = useState<string[]>([]);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem('tn-bustrack-saved-routes');
-    if (stored) {
-      setSavedRoutes(JSON.parse(stored) as string[]);
-    }
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = subscribeBusLocationUpdate((payload: Bus[] | { buses: Bus[] }) => {
-      const liveBuses = Array.isArray(payload) ? payload : payload.buses;
-      if (Array.isArray(liveBuses)) {
-        setBuses(liveBuses);
-      }
+    fetchBuses();
+    const unsub = subscribeBusLocationUpdate((payload: any) => {
+      const raw = Array.isArray(payload) ? payload : [payload];
+      if (Array.isArray(raw)) setBuses(raw.map(normalize));
     });
-
-    return unsubscribe;
+    return unsub;
   }, []);
+
+  async function fetchBuses() {
+    try {
+      const res = await fetch('/api/buses');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setBuses(data.map(normalize));
+      }
+    } catch (_) {}
+  }
 
   const filteredBuses = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase();
-    return buses.filter((bus) => {
-      const matchesSearch =
-        !query ||
-        bus.number.toLowerCase().includes(query) ||
-        bus.route.stops.some((stop) => stop.name.toLowerCase().includes(query));
-      const matchesOperator = selectedOperator === 'All' || bus.operator === selectedOperator;
-      return matchesSearch && matchesOperator;
-    });
-  }, [buses, searchTerm, selectedOperator]);
+    const q = searchTerm.trim().toLowerCase();
+    return q ? buses.filter(b => b.number.toLowerCase().includes(q) || b.routeName.toLowerCase().includes(q)) : buses;
+  }, [buses, searchTerm]);
 
-  const runningCount = buses.filter((bus) => bus.status === 'running').length;
-  const seatsAvailable = buses.reduce((sum, bus) => sum + bus.seatsAvailable, 0);
-  const totalPassengers = buses.reduce((sum, bus) => sum + bus.passengersInside, 0);
-
-  const toggleSavedRoute = (routeId: string) => {
-    setSavedRoutes((current) => {
-      const next = current.includes(routeId) ? current.filter((id) => id !== routeId) : [...current, routeId];
-      window.localStorage.setItem('tn-bustrack-saved-routes', JSON.stringify(next));
-      return next;
-    });
-  };
+  const runningCount = buses.filter(b => b.status === 'running').length;
+  const seatsAvailable = buses.reduce((sum, b) => sum + b.seatsAvailable, 0);
+  const totalPassengers = buses.reduce((sum, b) => sum + b.inside, 0);
 
   return (
     <div className="space-y-5 pb-28 max-sm:space-y-4">
       <div className="gradient-header rounded-3xl p-6 shadow-lg shadow-[var(--shadow-heavy)] max-sm:rounded-2xl max-sm:p-5">
         <div className="gradient-header-text flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <div className="flex items-center gap-3">
-              <span className="h-2 w-2 rounded-full bg-white/80 animate-pulse shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
-              <p className="font-orbitron text-[10px] uppercase tracking-[0.3em] text-white/60">{t('buses.liveBuses')}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <h1 className="mt-2 text-2xl font-bold text-white max-sm:text-xl">{t('buses.title')}</h1>
-              <span className="mt-2 rounded-md bg-white/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white/80">
-                {lang === 'ta' ? 'தமிழ்' : 'EN'}
-              </span>
-            </div>
+            <p className="font-orbitron text-[10px] uppercase tracking-[0.3em] text-white/60">{t('buses.liveBuses')}</p>
+            <h1 className="mt-2 text-2xl font-bold text-white max-sm:text-xl">{t('buses.title')}</h1>
             <p className="mt-2 text-sm text-white/70">{t('buses.subtitle')}</p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-3">
             <Card title={t('buses.running')} value={String(runningCount)} compact glow="blue" />
             <Card title={t('buses.seatsOpen')} value={String(seatsAvailable)} compact glow="teal" />
             <Card title={t('passenger.inside')} value={String(totalPassengers)} compact />
-            <Card title={t('buses.saved')} value={String(savedRoutes.length)} compact glow="amber" />
           </div>
         </div>
       </div>
 
       <div className="glass rounded-3xl p-5 shadow-lg shadow-[var(--shadow-heavy)]">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex-1">
-            <Input
-              placeholder={t('buses.search')}
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-            />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {operatorFilters.map((filter) => (
-              <button
-                key={filter}
-                type="button"
-                onClick={() => setSelectedOperator(filter)}
-                className={`rounded-full border px-4 py-2 text-xs font-semibold tracking-wider uppercase transition ${
-                  selectedOperator === filter
-                    ? 'border-[#0EA5E9] bg-[#0EA5E9] text-white shadow-[0_0_16px_rgba(14,165,233,0.3)]'
-                    : 'border-[var(--border-subtle)] bg-[var(--bg-primary)]/60 text-[var(--text-secondary)] hover:border-[#0EA5E9]/30 hover:text-[var(--text-primary)]'
-                }`}
-              >
-                {filter}
-              </button>
-            ))}
-          </div>
-        </div>
+        <Input
+          placeholder={t('buses.search')}
+          value={searchTerm}
+          onChange={(event) => setSearchTerm(event.target.value)}
+        />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
         {filteredBuses.length === 0 ? (
           <div className="col-span-full rounded-3xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-secondary)]/50 p-8 text-center max-sm:p-6">
-            <p className="text-sm text-[var(--text-muted)]">No buses found matching your search</p>
+            <p className="text-sm text-[var(--text-muted)]">
+              {searchTerm ? 'No buses found' : 'No buses active. Set up a bus in /setup'}
+            </p>
           </div>
         ) : (
           filteredBuses.map((bus) => (
-            <BusCard
-              key={bus.id}
-              bus={bus}
-              isSaved={savedRoutes.includes(bus.routeId)}
-              onToggleSaved={toggleSavedRoute}
-            />
+            <div key={bus.id} className="rounded-2xl border border-white/20 bg-white/70 p-4 shadow-lg backdrop-blur-xl border-l-4 border-l-[#22C55E]">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-[#22C55E]" />
+                <span className="text-xs font-semibold text-[var(--text-secondary)]">{bus.number}</span>
+              </div>
+              <p className="mt-1 text-sm font-medium text-[var(--text-primary)]">{bus.routeName}</p>
+              <div className="mt-3 grid grid-cols-3 gap-3">
+                <div>
+                  <p className="text-[9px] uppercase text-[var(--text-muted)]">வேகம்</p>
+                  <p className="font-jetbrains text-sm font-bold">{bus.speed} km/h</p>
+                </div>
+                <div>
+                  <p className="text-[9px] uppercase text-[var(--text-muted)]">இருக்கைகள்</p>
+                  <p className="font-jetbrains text-sm font-bold">{bus.seatsAvailable}/{bus.seatCapacity}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] uppercase text-[var(--text-muted)]">உள்ளே</p>
+                  <p className="font-jetbrains text-sm font-bold">{bus.inside}</p>
+                </div>
+              </div>
+            </div>
           ))
         )}
       </div>

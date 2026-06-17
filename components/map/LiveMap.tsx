@@ -49,8 +49,6 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
     const map = L.map(containerRef.current, {
       center: defaultCenter,
       zoom: 8,
-      maxBounds: tnBounds,
-      maxBoundsViscosity: 1,
       zoomControl: false,
       attributionControl: false
     });
