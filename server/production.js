@@ -214,6 +214,10 @@ app.post('/api/bus/create', (req, res) => {
 });
 
 // ── HEALTH CHECK ─────────────────────────────────────────────
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true, service: 'TN BusTrack API', busCount: Object.keys(busPositions).length });
+});
+
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
