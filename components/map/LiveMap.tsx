@@ -79,9 +79,12 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
   }, [buses, onBusSelect]);
 
   return (
-    <div
-      ref={containerRef}
-      style={{ width: '100%', height: 'calc(100vh - 5rem)', minHeight: '500px', touchAction: 'none' }}
-    />
+    <div className="relative h-[calc(100vh-5rem)] min-h-[500px] rounded-3xl border border-[var(--border)] bg-white/80 shadow-lg shadow-[var(--shadow-heavy)] max-sm:h-[calc(100dvh-4rem)] max-sm:rounded-2xl max-sm:min-h-[400px]">
+      <div
+        ref={containerRef}
+        className="h-full w-full"
+        style={{ touchAction: 'none' }}
+      />
+    </div>
   );
 }
