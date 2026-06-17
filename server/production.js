@@ -513,6 +513,77 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => clearInterval(timer));
 });
 
+// ── Firmware-compatible endpoints ──
+app.get('/health', (_req, res) => res.json({ status: 'ok', busCount: memory.buses.length }));
+
+app.post('/api/buses/update', async (req, res) => {
+  const { busId, lat, lng, speed, seats, inside, route } = req.body || {};
+  if (!busId || lat == null || lng == null) {
+    return res.status(400).json({ error: 'busId, lat, lng required' });
+  }
+  const bus = isDbReady()
+    ? await Bus.findById(busId)
+    : memory.buses.find((b) => String(b._id || b.id) === busId);
+  if (!bus) return res.status(404).json({ error: 'Bus not found' });
+  bus.latitude = Number(lat);
+  bus.longitude = Number(lng);
+  bus.speed = speed != null ? Number(speed) : bus.speed;
+  bus.status = Number(speed) > 0 ? 'running' : 'stopped';
+  if (seats != null) bus.seatsAvailable = clamp(Number(seats), 0, bus.seatCapacity);
+  if (inside != null) {
+    bus.passengersInside = clamp(Number(inside), 0, bus.seatCapacity);
+    bus.seatsAvailable = bus.seatCapacity - bus.passengersInside;
+  }
+  if (route) bus.routeName = route;
+  bus.lastRealUpdate = new Date().toISOString();
+  if (isDbReady()) await bus.save();
+  const liveBuses = await getBusesData();
+  io.emit('bus-location-update', liveBuses);
+  res.json({ ok: true, receivedAt: new Date().toISOString() });
+});
+
+app.post('/api/buses/count', async (req, res) => {
+  const { busId, inside, seats } = req.body || {};
+  if (!busId || inside == null) return res.status(400).json({ error: 'busId and inside required' });
+  const bus = isDbReady()
+    ? await Bus.findById(busId)
+    : memory.buses.find((b) => String(b._id || b.id) === busId);
+  if (!bus) return res.status(404).json({ error: 'Bus not found' });
+  bus.passengersInside = clamp(Number(inside), 0, bus.seatCapacity);
+  bus.seatsAvailable = seats != null ? clamp(Number(seats), 0, bus.seatCapacity) : bus.seatCapacity - bus.passengersInside;
+  bus.lastRealUpdate = new Date().toISOString();
+  if (isDbReady()) await bus.save();
+  const liveBuses = await getBusesData();
+  io.emit('bus-location-update', liveBuses);
+  res.json({ ok: true, receivedAt: new Date().toISOString() });
+});
+
+app.get('/api/config/:id', async (req, res) => {
+  const bus = isDbReady()
+    ? await Bus.findById(req.params.id).lean()
+    : memory.buses.find((b) => String(b._id || b.id) === req.params.id || b.number === req.params.id);
+  if (!bus) return res.status(404).json({ error: 'Bus not found' });
+  res.json({
+    totalSeats: bus.seatCapacity || 42,
+    routeName: bus.routeName || (bus.route ? bus.route.name : 'Default Route'),
+    driverName: bus.driverName || 'Unknown'
+  });
+});
+
+app.post('/api/config/save', async (req, res) => {
+  const { busId, totalSeats, routeName, driverName } = req.body || {};
+  if (!busId) return res.status(400).json({ error: 'busId required' });
+  const bus = isDbReady()
+    ? await Bus.findById(busId)
+    : memory.buses.find((b) => String(b._id || b.id) === busId || b.number === busId);
+  if (!bus) return res.status(404).json({ error: 'Bus not found' });
+  if (totalSeats) bus.seatCapacity = Number(totalSeats);
+  if (routeName) bus.routeName = routeName;
+  if (driverName) bus.driverName = driverName;
+  if (isDbReady()) await bus.save();
+  res.json({ ok: true });
+});
+
 app.all('*', (req, res) => handle(req, res));
 
 bootstrap().finally(() => {
