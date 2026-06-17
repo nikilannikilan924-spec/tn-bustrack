@@ -85,6 +85,7 @@ function findBus(busId) {
 app.post('/api/buses/update', (req, res) => {
   const { busId, lat, lng, speed, seats, inside, route, gpsFixed } = req.body;
   if (!busId) return res.status(400).json({ error: 'busId required' });
+  if (deletedBuses.has(busId)) return res.status(403).json({ error: 'Bus deleted' });
 
   const cfg = busConfigs[busId] || {};
   const routeKey = cfg.routeKey || 'namakkal-salem';
@@ -122,6 +123,7 @@ app.post('/api/buses/update', (req, res) => {
 app.post('/api/buses/count', (req, res) => {
   const { busId, inside, seats } = req.body;
   if (!busId) return res.status(400).json({ error: 'busId required' });
+  if (deletedBuses.has(busId)) return res.status(403).json({ error: 'Bus deleted' });
 
   if (busPositions[busId]) {
     busPositions[busId].inside = inside;
