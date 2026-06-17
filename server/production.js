@@ -213,6 +213,67 @@ app.post('/api/bus/create', (req, res) => {
   res.status(201).json({ bus, config: busConfigs[busId] });
 });
 
+// ── BACKWARD-COMPATIBLE ENDPOINTS (old firmware) ────────────
+app.post('/api/bus/location', (req, res) => {
+  const { busId, latitude, longitude, speed, passengersInside, seatsAvailable } = req.body;
+  if (!busId || latitude == null || longitude == null) {
+    return res.status(400).json({ error: 'busId, latitude, longitude required' });
+  }
+  const cfg = busConfigs[busId] || {};
+  const busData = {
+    busId,
+    lat: Number(latitude),
+    lng: Number(longitude),
+    speed: speed || 0,
+    seats: seatsAvailable ?? (cfg.totalSeats || 42) - (passengersInside || 0),
+    inside: passengersInside || 0,
+    route: cfg.routeName || 'Unknown',
+    gpsFixed: true,
+    currentStop: 'Unknown',
+    lastUpdate: new Date().toISOString(),
+  };
+  busPositions[busId] = busData;
+  io.to('all-buses').emit('busUpdate', busData);
+  res.json({ ok: true });
+});
+
+app.post('/api/bus/passengers', (req, res) => {
+  const { busId, passengersInside } = req.body;
+  if (!busId || passengersInside == null) return res.status(400).json({ error: 'busId, passengersInside required' });
+  if (busPositions[busId]) {
+    busPositions[busId].inside = passengersInside;
+    busPositions[busId].seats = (busConfigs[busId]?.totalSeats || 42) - passengersInside;
+  }
+  io.to('all-buses').emit('countUpdate', { busId, inside: passengersInside });
+  res.json({ ok: true });
+});
+
+app.get('/api/device/config', (req, res) => {
+  const entries = Object.entries(busConfigs);
+  if (entries.length === 0) {
+    return res.json({ configured: false, message: 'No bus found. Use /setup to create one.' });
+  }
+  const [busId, cfg] = entries[0];
+  const pos = busPositions[busId];
+  res.json({
+    configured: true,
+    bus: {
+      id: busId,
+      number: cfg.busNumber || busId,
+      seatCapacity: cfg.totalSeats || 42,
+      latitude: pos ? pos.lat : 0,
+      longitude: pos ? pos.lng : 0,
+      status: pos && pos.speed > 0 ? 'running' : 'stopped'
+    },
+    route: {
+      id: 'route-1',
+      origin: cfg.routeName || 'Unknown',
+      destination: '',
+      stops: []
+    }
+  });
+});
+
 // ── HEALTH CHECK ─────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, service: 'TN BusTrack API', busCount: Object.keys(busPositions).length });
