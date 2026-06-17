@@ -47,7 +47,14 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
       center: defaultCenter,
       zoom: 8,
       zoomControl: false,
-      attributionControl: false
+      attributionControl: false,
+      dragging: true,
+      touchZoom: true,
+      scrollWheelZoom: true,
+      doubleClickZoom: true,
+      boxZoom: true,
+      keyboard: true,
+      tap: true
     });
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -57,16 +64,9 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
 
     L.control.zoom({ position: 'topleft' }).addTo(map);
 
-    map.dragging.enable();
-    map.touchZoom.enable();
-    map.doubleClickZoom.enable();
-    map.scrollWheelZoom.enable();
-    map.boxZoom.enable();
-    map.keyboard.enable();
-
     markersLayerRef.current = L.layerGroup().addTo(map);
 
-    map.on('load', () => setLoaded(true));
+    setLoaded(true);
 
     mapRef.current = map;
 
@@ -124,11 +124,11 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
 
 
   return (
-    <div className="relative h-[calc(100vh-5rem)] min-h-[500px] rounded-3xl border border-[var(--border)] bg-white/80 shadow-lg shadow-[var(--shadow-heavy)] max-sm:h-[calc(100dvh-4rem)] max-sm:rounded-2xl max-sm:min-h-[400px]" style={{ touchAction: 'none' }}>
-      <div ref={containerRef} className="h-full w-full" />
+    <div className="relative h-[calc(100vh-5rem)] min-h-[500px] rounded-3xl border border-[var(--border)] bg-white/80 shadow-lg shadow-[var(--shadow-heavy)] max-sm:h-[calc(100dvh-4rem)] max-sm:rounded-2xl max-sm:min-h-[400px]">
+      <div ref={containerRef} className="h-full w-full" style={{ touchAction: 'none' }} />
 
       {!loaded && (
-        <div className="absolute inset-0 z-20 grid place-items-center rounded-3xl border border-[var(--border)] bg-white/80 text-center text-sm text-[var(--text-secondary)] backdrop-blur">
+        <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-3xl border border-[var(--border)] bg-white/80 text-center text-sm text-[var(--text-secondary)] backdrop-blur">
           Loading map...
         </div>
       )}
