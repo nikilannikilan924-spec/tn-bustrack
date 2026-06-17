@@ -124,8 +124,8 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
 
 
   return (
-    <div className="relative h-[calc(100vh-5rem)] min-h-[500px] rounded-3xl border border-[var(--border)] bg-white/80 shadow-lg shadow-[var(--shadow-heavy)] max-sm:h-[calc(100dvh-4rem)] max-sm:rounded-2xl max-sm:min-h-[400px]">
-      <div ref={containerRef} className="h-full w-full" style={{ touchAction: 'none' }} />
+    <div className="relative h-[calc(100vh-5rem)] min-h-[500px] rounded-3xl border border-[var(--border)] bg-white/80 shadow-lg shadow-[var(--shadow-heavy)] max-sm:h-[calc(100dvh-4rem)] max-sm:rounded-2xl max-sm:min-h-[400px]" style={{ touchAction: 'none' }}>
+      <div ref={containerRef} className="h-full w-full" />
 
       {!loaded && (
         <div className="absolute inset-0 z-20 grid place-items-center rounded-3xl border border-[var(--border)] bg-white/80 text-center text-sm text-[var(--text-secondary)] backdrop-blur">

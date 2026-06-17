@@ -193,6 +193,8 @@ button, input, textarea, select { font: inherit; }
   background: linear-gradient(135deg, #0284C7 0%, #0EA5E9 50%, #14B8A6 100%);
 }
 
+.leaflet-container { touch-action: none !important; }
+
 .tn-gradient-text {
   background: linear-gradient(135deg, #0EA5E9 0%, #14B8A6 50%, #06B6D4 100%);
   -webkit-background-clip: text;

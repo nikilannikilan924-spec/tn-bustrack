@@ -1,11 +1,14 @@
 require('dotenv').config();
 
 const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const next = require('next');
+
+const DELETED_BUSES_FILE = path.join(__dirname, '..', 'deleted-buses.json');
 
 const dev = process.env.NODE_ENV !== 'production';
 const nextApp = next({ dev, dir: path.join(__dirname, '..') });
@@ -217,11 +220,36 @@ app.post('/api/bus/create', (req, res) => {
   res.status(201).json({ bus, config: busConfigs[busId] });
 });
 
-const deletedBuses = new Set();
+let deletedBuses = new Set();
+
+// Load deleted buses from file (survives restart, not deploy)
+try {
+  if (fs.existsSync(DELETED_BUSES_FILE)) {
+    const data = JSON.parse(fs.readFileSync(DELETED_BUSES_FILE, 'utf-8'));
+    deletedBuses = new Set(data);
+  }
+} catch (e) { console.error('Failed to load deleted buses from file:', e.message); }
+
+// Also load from env var (survives deploy — set DELETED_BUSES on Railway dashboard)
+if (process.env.DELETED_BUSES) {
+  process.env.DELETED_BUSES.split(',').map(s => s.trim()).filter(Boolean).forEach(id => deletedBuses.add(id));
+}
+
+if (deletedBuses.size > 0) {
+  console.log('Loaded deleted buses:', [...deletedBuses]);
+  saveDeletedBuses(); // sync file so it persists in container
+}
+
+function saveDeletedBuses() {
+  try {
+    fs.writeFileSync(DELETED_BUSES_FILE, JSON.stringify([...deletedBuses], null, 2));
+  } catch (e) { console.error('Failed to save deleted buses:', e.message); }
+}
 
 app.delete('/api/buses/:busId', (req, res) => {
   const busId = req.params.busId;
   deletedBuses.add(busId);
+  saveDeletedBuses();
   delete busPositions[busId];
   delete busConfigs[busId];
   delete gpsHistory[busId];
