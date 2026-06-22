@@ -86,7 +86,8 @@ function findBus(busId) {
 
 // ── ESP32 SENDS GPS DATA ─────────────────────────────────────
 app.post('/api/buses/update', (req, res) => {
-  const { busId, lat, lng, speed, seats, inside, route, gpsFixed } = req.body;
+  let { busId, lat, lng, speed, seats, inside, route, gpsFixed } = req.body;
+  if (busId) busId = busId.trim();
   if (!busId) return res.status(400).json({ error: 'busId required' });
   if (deletedBuses.has(busId)) return res.status(403).json({ error: 'Bus deleted' });
 
@@ -124,7 +125,8 @@ app.post('/api/buses/update', (req, res) => {
 
 // ── ESP32 SENDS COUNT UPDATE ────────────────────────────────
 app.post('/api/buses/count', (req, res) => {
-  const { busId, inside, seats } = req.body;
+  let { busId, inside, seats } = req.body;
+  if (busId) busId = busId.trim();
   if (!busId) return res.status(400).json({ error: 'busId required' });
   if (deletedBuses.has(busId)) return res.status(403).json({ error: 'Bus deleted' });
 
@@ -155,7 +157,8 @@ app.get('/api/buses/:busId', (req, res) => {
 
 // ── APP: SAVE BUS CONFIG ─────────────────────────────────────
 app.post('/api/config/save', (req, res) => {
-  const { busId, totalSeats, routeName, routeKey, driverName, busNumber } = req.body;
+  let { busId, totalSeats, routeName, routeKey, driverName, busNumber } = req.body;
+  if (busId) busId = busId.trim();
   if (!busId) return res.status(400).json({ error: 'busId required' });
 
   busConfigs[busId] = {
@@ -206,6 +209,7 @@ app.delete('/api/routes/:id', (req, res) => {
 
 app.post('/api/bus/create', (req, res) => {
   const bus = { id: `bus-${Date.now()}`, ...req.body };
+  if (bus.busId) bus.busId = bus.busId.trim();
   memoryBuses.push(bus);
   const busId = bus.busId || bus.number || bus.id;
   busConfigs[busId] = {
@@ -263,7 +267,8 @@ app.get('/api/config', (_req, res) => {
 
 // ── BACKWARD-COMPATIBLE ENDPOINTS (old firmware) ────────────
 app.post('/api/bus/location', (req, res) => {
-  const { busId, latitude, longitude, speed, passengersInside, seatsAvailable } = req.body;
+  let { busId, latitude, longitude, speed, passengersInside, seatsAvailable } = req.body;
+  if (busId) busId = busId.trim();
   if (!busId || latitude == null || longitude == null) {
     return res.status(400).json({ error: 'busId, latitude, longitude required' });
   }
@@ -292,7 +297,8 @@ app.post('/api/bus/location', (req, res) => {
 });
 
 app.post('/api/bus/passengers', (req, res) => {
-  const { busId, passengersInside } = req.body;
+  let { busId, passengersInside } = req.body;
+  if (busId) busId = busId.trim();
   if (!busId || passengersInside == null) return res.status(400).json({ error: 'busId, passengersInside required' });
   if (busPositions[busId]) {
     busPositions[busId].inside = passengersInside;
