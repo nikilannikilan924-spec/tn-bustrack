@@ -10,4 +10,5 @@ yarn-error.log*
 coverage
 .vercel
 tsconfig.tsbuildinfo
+deleted-buses.json
 nul

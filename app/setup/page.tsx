@@ -20,7 +20,7 @@ interface ConfiguredBus {
 export default function SetupPage() {
   const { t, lang } = useLanguage();
 
-  const [busId, setBusId] = useState('TN07 828 1122');
+  const [busId, setBusId] = useState('M31');
   const [busNumber, setBusNumber] = useState('');
   const [busName, setBusName] = useState('');
   const [origin, setOrigin] = useState('');
