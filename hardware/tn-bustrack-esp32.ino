@@ -9,7 +9,7 @@
 // ── CHANGE THESE 3 LINES ────────────────────────────────────
 const char* WIFI_SSID     = "SSID";
 const char* WIFI_PASSWORD = "Nikilan31";
-const char* BUS_ID        = "TN07 828 1122";
+const char* BUS_ID        = "M31";
 // ────────────────────────────────────────────────────────────
 
 // ── SERVER URLs ─────────────────────────────────────────────
@@ -349,7 +349,7 @@ void pulseRelay(int pin) {
 // ────────────────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
-  gps.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
+  gps.begin(115200, SERIAL_8N1, GPS_RX, GPS_TX);
 
   pinMode(TRIG_A, OUTPUT);
   pinMode(ECHO_A, INPUT);
