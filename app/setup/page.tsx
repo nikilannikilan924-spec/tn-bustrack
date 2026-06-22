@@ -20,6 +20,7 @@ interface ConfiguredBus {
 export default function SetupPage() {
   const { t, lang } = useLanguage();
 
+  const [busId, setBusId] = useState('TN07 828 1122');
   const [busNumber, setBusNumber] = useState('');
   const [busName, setBusName] = useState('');
   const [origin, setOrigin] = useState('');
@@ -140,6 +141,7 @@ export default function SetupPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           number: busNumber,
+          busId: busId,
           routeName: busName || `${origin} to ${destination}`,
           latitude: parseFloat(stops[0].lat),
           longitude: parseFloat(stops[0].lng),
@@ -147,8 +149,7 @@ export default function SetupPage() {
         })
       });
       const busData = await busRes.json();
-      const busId = busNumber;
-      setSavedBusId(busId);
+      setSavedBusId(busNumber || busId);
 
       setMessage(lang === 'ta' ? 'வெற்றி! ESP32 இல் இந்த Bus ID ஐப் பயன்படுத்தவும்' : 'Success! Use this Bus ID in ESP32 firmware');
     } catch (e) {
@@ -188,6 +189,11 @@ export default function SetupPage() {
 
       <div className="rounded-3xl bg-white/80 p-6 shadow-lg backdrop-blur-xl sm:p-8">
         <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="block text-xs font-semibold text-[var(--text-secondary)]">Bus ID (must match ESP32)</label>
+            <input value={busId} onChange={(e) => setBusId(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-sm outline-none focus:border-[#0EA5E9]" />
+          </div>
           <div>
             <label className="block text-xs font-semibold text-[var(--text-secondary)]">{getVal('setup.busNumber')}</label>
             <input value={busNumber} onChange={(e) => setBusNumber(e.target.value)}

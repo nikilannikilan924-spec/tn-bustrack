@@ -207,7 +207,7 @@ app.delete('/api/routes/:id', (req, res) => {
 app.post('/api/bus/create', (req, res) => {
   const bus = { id: `bus-${Date.now()}`, ...req.body };
   memoryBuses.push(bus);
-  const busId = bus.number || bus.id;
+  const busId = bus.busId || bus.number || bus.id;
   busConfigs[busId] = {
     busId,
     totalSeats: bus.seatCapacity || 42,
