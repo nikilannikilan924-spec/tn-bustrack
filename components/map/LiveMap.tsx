@@ -92,37 +92,45 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
     };
   }, []);
 
+  const prevDataRef = useRef<Map<string, string>>(new Map());
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
     const markers = markersRef.current;
+    const prev = prevDataRef.current;
     const seen = new Set<string>();
 
     buses.forEach((bus) => {
       seen.add(bus.id);
       const targetLatLng: L.LatLngExpression = [bus.latitude, bus.longitude];
+      const serialized = `${bus.latitude},${bus.longitude},${bus.speed},${bus.seatsAvailable},${bus.currentStop},${bus.status},${bus.nextStops.map(s=>s.name+s.etaMin).join('|')}`;
 
       if (markers.has(bus.id)) {
         const marker = markers.get(bus.id)!;
-        const cur = marker.getLatLng();
-        if (cur.lat !== bus.latitude || cur.lng !== bus.longitude) {
-          const startLat = cur.lat, startLng = cur.lng;
-          const endLat = bus.latitude, endLng = bus.longitude;
-          const startTime = performance.now();
-          const duration = 1500;
-          function animate(time: number) {
-            const t = Math.min((time - startTime) / duration, 1);
-            const lat = startLat + (endLat - startLat) * t;
-            const lng = startLng + (endLng - startLng) * t;
-            marker.setLatLng([lat, lng]);
-            if (t < 1) requestAnimationFrame(animate);
+        const last = prev.get(bus.id);
+        if (last !== serialized) {
+          const cur = marker.getLatLng();
+          if (cur.lat !== bus.latitude || cur.lng !== bus.longitude) {
+            const startLat = cur.lat, startLng = cur.lng;
+            const endLat = bus.latitude, endLng = bus.longitude;
+            const startTime = performance.now();
+            const duration = 1500;
+            function animate(time: number) {
+              const t = Math.min((time - startTime) / duration, 1);
+              const lat = startLat + (endLat - startLat) * t;
+              const lng = startLng + (endLng - startLng) * t;
+              marker.setLatLng([lat, lng]);
+              if (t < 1) requestAnimationFrame(animate);
+            }
+            requestAnimationFrame(animate);
           }
-          requestAnimationFrame(animate);
-        }
-        marker.setIcon(makeBusIcon(bus, 14));
-        if (marker.getPopup()) {
-          marker.setPopupContent(makePopupHtml(bus));
+          marker.setIcon(makeBusIcon(bus, 14));
+          if (marker.getPopup()) {
+            marker.setPopupContent(makePopupHtml(bus));
+          }
+          prev.set(bus.id, serialized);
         }
       } else {
         const icon = makeBusIcon(bus, 14);
@@ -131,6 +139,7 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
         marker.on('click', () => onBusSelect(bus.id));
         marker.addTo(map);
         markers.set(bus.id, marker);
+        prev.set(bus.id, serialized);
       }
     });
 
@@ -138,6 +147,7 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
       if (!seen.has(id)) {
         marker.removeFrom(map);
         markers.delete(id);
+        prev.delete(id);
       }
     });
   }, [buses, onBusSelect]);
