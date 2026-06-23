@@ -58,8 +58,8 @@ const STOPS = {
   ]
 };
 
-function getNearestStop(lat, lng, routeKey) {
-  const stops = STOPS[routeKey] || STOPS['namakkal-salem'];
+function getNearestStop(lat, lng, routeKey, customStops) {
+  const stops = customStops || STOPS[routeKey] || STOPS['namakkal-salem'];
   let nearest = stops[0];
   let minDist = Infinity;
   stops.forEach(stop => {
@@ -69,8 +69,8 @@ function getNearestStop(lat, lng, routeKey) {
   return { stop: nearest, distKm: minDist };
 }
 
-function getNextStops(currentStopName, routeKey, busLat, busLng) {
-  const stops = STOPS[routeKey] || STOPS['namakkal-salem'];
+function getNextStops(currentStopName, routeKey, busLat, busLng, customStops) {
+  const stops = customStops || STOPS[routeKey] || STOPS['namakkal-salem'];
   const curIdx = stops.findIndex(s => s.name === currentStopName);
   if (curIdx === -1) return [];
   return stops.slice(curIdx + 1).map(stop => {
@@ -93,8 +93,9 @@ app.post('/api/buses/update', (req, res) => {
 
   const cfg = busConfigs[busId] || {};
   const routeKey = cfg.routeKey || 'namakkal-salem';
-  const { stop, distKm } = getNearestStop(lat, lng, routeKey);
-  const nextStops = getNextStops(stop.name, routeKey, lat, lng);
+  const customStops = cfg.stops;
+  const { stop, distKm } = getNearestStop(lat, lng, routeKey, customStops);
+  const nextStops = getNextStops(stop.name, routeKey, lat, lng, customStops);
 
   const busData = {
     busId,
@@ -219,6 +220,7 @@ app.post('/api/bus/create', (req, res) => {
     routeKey: 'namakkal-salem',
     driverName: 'Unknown',
     busNumber: bus.number || busId,
+    stops: bus.stops || [],
     updatedAt: new Date().toISOString()
   };
   res.status(201).json({ bus, config: busConfigs[busId] });
@@ -275,8 +277,9 @@ app.post('/api/bus/location', (req, res) => {
   if (deletedBuses.has(busId)) return res.status(403).json({ error: 'Bus deleted' });
   const cfg = busConfigs[busId] || {};
   const routeKey = cfg.routeKey || 'namakkal-salem';
-  const { stop, distKm } = getNearestStop(Number(latitude), Number(longitude), routeKey);
-  const nextStops = getNextStops(stop.name, routeKey, Number(latitude), Number(longitude));
+  const customStops = cfg.stops;
+  const { stop, distKm } = getNearestStop(Number(latitude), Number(longitude), routeKey, customStops);
+  const nextStops = getNextStops(stop.name, routeKey, Number(latitude), Number(longitude), customStops);
   const busData = {
     busId,
     lat: Number(latitude),

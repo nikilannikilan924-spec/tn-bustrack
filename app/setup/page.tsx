@@ -146,6 +146,7 @@ export default function SetupPage() {
           latitude: parseFloat(stops[0].lat),
           longitude: parseFloat(stops[0].lng),
           seatCapacity: parseInt(seatCapacity) || 50,
+          stops: stops.map(s => ({ name: s.name, lat: parseFloat(s.lat), lng: parseFloat(s.lng) })),
         })
       });
       const busData = await busRes.json();
