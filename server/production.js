@@ -42,24 +42,13 @@ function getDistanceKm(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-const STOPS = {
-  'namakkal-salem': [
-    { name: 'Namakkal Bus Stand', lat: 11.2189, lng: 78.1670 },
-    { name: 'Mohanur', lat: 11.2531, lng: 78.1231 },
-    { name: 'Tiruchengode', lat: 11.3865, lng: 77.8942 },
-    { name: 'Rasipuram', lat: 11.4596, lng: 78.1735 },
-    { name: 'Salem Bus Stand', lat: 11.6643, lng: 78.1460 },
-  ],
-  'coimbatore-tirupur': [
-    { name: 'Coimbatore Central', lat: 11.0168, lng: 76.9558 },
-    { name: 'Kuniyamuthur', lat: 10.9838, lng: 76.9346 },
-    { name: 'Mettupalayam', lat: 11.2988, lng: 76.9400 },
-    { name: 'Tirupur Bus Stand', lat: 11.1085, lng: 77.3411 },
-  ]
-};
+const STOPS = {};
 
 function getNearestStop(lat, lng, routeKey, customStops) {
-  const stops = customStops || STOPS[routeKey] || STOPS['namakkal-salem'];
+  const stops = customStops || STOPS[routeKey];
+  if (!stops || stops.length === 0) {
+    return { stop: { name: 'Unknown', lat, lng }, distKm: 0 };
+  }
   let nearest = stops[0];
   let minDist = Infinity;
   stops.forEach(stop => {
@@ -70,7 +59,9 @@ function getNearestStop(lat, lng, routeKey, customStops) {
 }
 
 function getNextStops(currentStopName, routeKey, busLat, busLng, customStops) {
-  const stops = customStops || STOPS[routeKey] || STOPS['namakkal-salem'];
+  const stops = customStops || STOPS[routeKey];
+  if (!stops || stops.length === 0) return [];
+  if (currentStopName === 'Unknown') return [];
   const curIdx = stops.findIndex(s => s.name === currentStopName);
   if (curIdx === -1) return [];
   return stops.slice(curIdx + 1).map(stop => {
