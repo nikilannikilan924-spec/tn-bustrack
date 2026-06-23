@@ -25,9 +25,6 @@ const char* CONFIG_URL = "https://tn-bustrack-production.up.railway.app/api/conf
 #define ECHO_A 14
 #define TRIG_B 27
 #define ECHO_B 15
-#define RELAY_A 13
-#define RELAY_B 4
-#define THRESHOLD 30
 // ────────────────────────────────────────────────────────────
 
 // ── BUS CONFIG ──────────────────────────────────────────────
@@ -57,87 +54,21 @@ unsigned long lastCountSend = 0;
 const unsigned long GPS_INTERVAL = 8000;  // send GPS every 8s
 const unsigned long COUNT_INTERVAL = 2000; // send count change within 2s
 
-// ── NON-BLOCKING SENSOR READING ────────────────────────────
-// 3-state: IDLE → WAITING_HIGH → WAITING_LOW → DONE
-#define S_IDLE 0
-#define S_WAIT_HIGH 1
-#define S_WAIT_LOW 2
-#define S_DONE 3
+// ── SENSOR READING ──────────────────────────────────────────
+long readDistance(int trig, int echo) {
+  digitalWrite(trig, LOW); delayMicroseconds(2);
+  digitalWrite(trig, HIGH); delayMicroseconds(10);
+  digitalWrite(trig, LOW);
 
-struct USSensor {
-  int trig, echo;
-  int step;
-  unsigned long t;
-  long distance;
-  bool valid;
-};
+  unsigned long t = micros();
+  while (digitalRead(echo) == LOW && micros() - t < 10000);
+  if (digitalRead(echo) == LOW) return 999;
+  t = micros();
+  while (digitalRead(echo) == HIGH && micros() - t < 10000);
+  if (digitalRead(echo) == HIGH) return 999;
 
-USSensor sensorA = {TRIG_A, ECHO_A, S_IDLE, 0, 999, false};
-USSensor sensorB = {TRIG_B, ECHO_B, S_IDLE, 0, 999, false};
-
-void startSensorRead(struct USSensor* s) {
-  digitalWrite(s->trig, LOW);
-  delayMicroseconds(2);
-  digitalWrite(s->trig, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(s->trig, LOW);
-  s->t = micros();
-  s->step = S_WAIT_HIGH;
-}
-
-void updateSensor(struct USSensor* s) {
-  if (s->step == S_IDLE || s->step == S_DONE) return;
-
-  unsigned long now = micros();
-
-  if (s->step == S_WAIT_HIGH) {
-    if (digitalRead(s->echo) == HIGH) {
-      s->t = now;
-      s->step = S_WAIT_LOW;
-    } else if (now - s->t > 30000) {
-      s->step = S_DONE;
-      s->distance = 999;
-      s->valid = false;
-    }
-    return;
-  }
-
-  if (s->step == S_WAIT_LOW) {
-    if (digitalRead(s->echo) == LOW) {
-      unsigned long duration = now - s->t;
-      long d = (duration * 0.034) / 2;
-      s->distance = d > 500 ? 999 : d;
-      s->valid = (s->distance < 999);
-      s->step = S_DONE;
-    } else if (now - s->t > 30000) {
-      s->step = S_DONE;
-      s->distance = 999;
-      s->valid = false;
-    }
-    return;
-  }
-}
-
-bool sensorBlocked(struct USSensor* s) {
-  return s->step == S_DONE && s->valid && s->distance < THRESHOLD;
-}
-
-void readSensors() {
-  if (sensorA.step == S_IDLE && sensorB.step == S_IDLE) {
-    startSensorRead(&sensorA);
-    startSensorRead(&sensorB);
-  }
-  updateSensor(&sensorA);
-  updateSensor(&sensorB);
-}
-
-bool sensorsReady() {
-  return sensorA.step == S_DONE && sensorB.step == S_DONE;
-}
-
-void resetSensors() {
-  sensorA.step = S_IDLE;
-  sensorB.step = S_IDLE;
+  long d = ((micros() - t) * 0.034) / 2;
+  return d > 500 ? 999 : d;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -336,15 +267,6 @@ void sendCount() {
 }
 
 // ────────────────────────────────────────────────────────────
-//  TRIGGER RELAY PULSE (non-blocking)
-// ────────────────────────────────────────────────────────────
-void pulseRelay(int pin) {
-  digitalWrite(pin, LOW);
-  delay(50);
-  digitalWrite(pin, HIGH);
-}
-
-// ────────────────────────────────────────────────────────────
 //  SETUP
 // ────────────────────────────────────────────────────────────
 void setup() {
@@ -355,10 +277,6 @@ void setup() {
   pinMode(ECHO_A, INPUT);
   pinMode(TRIG_B, OUTPUT);
   pinMode(ECHO_B, INPUT);
-  pinMode(RELAY_A, OUTPUT);
-  pinMode(RELAY_B, OUTPUT);
-  digitalWrite(RELAY_A, HIGH);
-  digitalWrite(RELAY_B, HIGH);
 
   Serial.print("Connecting to WiFi...");
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -388,53 +306,25 @@ void setup() {
 void loop() {
   readGps();
 
-  // Non-blocking sensor reads
-  readSensors();
+  long dA = readDistance(TRIG_A, ECHO_A);
+  long dB = readDistance(TRIG_B, ECHO_B);
 
-  if (sensorsReady()) {
-    bool a = sensorBlocked(&sensorA);
-    bool b = sensorBlocked(&sensorB);
+  bool a = dA > THRESHOLD && dA < 999;
+  bool b = dB > THRESHOLD && dB < 999;
 
-    if (state == 3) {
-      if (!a && !b) {
-        if (++debounce >= 2) { debounce = 0; state = 0; }
-      } else {
-        debounce = 0;
-      }
-    } else if (!a && !b) {
-      if (++debounce >= 2) { debounce = 0; state = 0; }
-    } else if (state == 0) {
-      if (a && !b) {
-        if (++debounce >= 2) { debounce = 0; state = 1; }
-      } else if (b && !a) {
-        if (++debounce >= 2) { debounce = 0; state = 2; }
-      } else {
-        debounce = 0;
-      }
-    } else if (a && b) {
-      if (++debounce >= 2) {
-        debounce = 0;
-        if (state == 1) {
-          passengers++;
-          state = 3;
-          pendingPassengers = passengers;
-          Serial.println("ENTER " + String(passengers));
-          pulseRelay(RELAY_A);
-        } else if (state == 2) {
-          passengers--;
-          if (passengers < 0) passengers = 0;
-          state = 3;
-          pendingPassengers = passengers;
-          Serial.println("EXIT  " + String(passengers));
-          pulseRelay(RELAY_B);
-        }
-      }
-    } else {
+  if (state == 3) {
+    if (!a && !b) { debounce = 0; state = 0; }
+  } else if (state == 0) {
+    if (a && !b) { if (++debounce >= 2) { debounce = 0; state = 1; } }
+    else if (b && !a) { if (++debounce >= 2) { debounce = 0; state = 2; } }
+    else { debounce = 0; }
+  } else if (a && b) {
+    if (++debounce >= 2) {
       debounce = 0;
+      if (state == 1) { passengers++; state = 3; pendingPassengers = passengers; Serial.print("ENTER "); Serial.println(passengers); }
+      else if (state == 2) { passengers--; if (passengers < 0) passengers = 0; state = 3; pendingPassengers = passengers; Serial.print("EXIT "); Serial.println(passengers); }
     }
-
-    resetSensors();
-  }
+  } else { debounce = 0; }
 
   unsigned long now = millis();
 

@@ -1,207 +1,161 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
-const char* ssid = "SSID";
-const char* password = "Nikilan31";
-const char* locationUrl = "https://tn-bustrack-production.up.railway.app/api/bus/location";
-const char* passengerUrl = "https://tn-bustrack-production.up.railway.app/api/bus/passengers";
-String busId = "M31";
+const char* WIFI_SSID     = "SSID";        // CHANGE THIS
+const char* WIFI_PASSWORD = "Nikilan31";   // CHANGE THIS
+const char* BUS_ID        = "M31";
+const char* GPS_URL    = "https://tn-bustrack-production.up.railway.app/api/buses/update";
+const char* COUNT_URL  = "https://tn-bustrack-production.up.railway.app/api/buses/count";
+const char* CONFIG_URL = "https://tn-bustrack-production.up.railway.app/api/config/";
 #define GPS_RX 16
 #define GPS_TX 17
-HardwareSerial gps(2);
 #define TRIG_A 12
 #define ECHO_A 14
 #define TRIG_B 27
 #define ECHO_B 15
-#define THRESHOLD 30
-#define RELAY_A 13
-#define RELAY_B 4
-#define SEND_INTERVAL 3000
-#define SCAN_INTERVAL 100
+#define THRESHOLD 50
+int totalSeats = 42;
+String routeName = "Default";
 float gpsLat = 0, gpsLng = 0;
-float gpsSpeed = 0;
+int gpsSpeed = 0;
 unsigned long lastGpsFix = 0;
 bool gpsFixed = false;
-enum SensorState { S_IDLE, S_WENT_HIGH, S_WENT_LOW };
-struct USS {
-  int trig, echo, relay;
-  SensorState state;
-  unsigned long t;
-  float dist;
-  bool blocked;
-  unsigned long blockedSince;
-} sa = {TRIG_A, ECHO_A, RELAY_A, S_IDLE, 0, 999, false, 0},
-  sb = {TRIG_B, ECHO_B, RELAY_B, S_IDLE, 0, 999, false, 0};
-unsigned long lastSensorScan = 0;
-unsigned long lastSend = 0;
-int passengers = 0;
-void connectWiFi() {
-  if (WiFi.status() == WL_CONNECTED) return;
-  Serial.print("WiFi");
-  WiFi.begin(ssid, password);
-  for (int i = 0; i < 40; i++) {
-    if (WiFi.status() == WL_CONNECTED) break;
-    delay(500); Serial.print(".");
-  }
-  Serial.println(WiFi.status() == WL_CONNECTED ? " OK" : " FAIL");
+HardwareSerial gps(2);
+int passengers = 0, state = 0, pendingPassengers = -1, debounce = 0;
+unsigned long lastGpsSend = 0, lastCountSend = 0;
+const unsigned long GPS_INTERVAL = 8000, COUNT_INTERVAL = 2000;
+long readDistance(int trig, int echo) {
+  digitalWrite(trig, LOW); delayMicroseconds(2);
+  digitalWrite(trig, HIGH); delayMicroseconds(10);
+  digitalWrite(trig, LOW);
+  unsigned long t = micros();
+  while (digitalRead(echo) == LOW && micros() - t < 10000);
+  if (digitalRead(echo) == LOW) return 999;
+  t = micros();
+  while (digitalRead(echo) == HIGH && micros() - t < 10000);
+  if (digitalRead(echo) == HIGH) return 999;
+  long d = ((micros() - t) * 0.034) / 2;
+  return d > 500 ? 999 : d;
 }
-void tickSensor(USS &s) {
-  unsigned long now = micros();
-  switch (s.state) {
-    case S_IDLE:
-      if (now - lastSensorScan >= 50000) {
-        lastSensorScan = now;
-        digitalWrite(s.trig, HIGH);
-        s.state = S_WENT_HIGH; s.t = now;
-      }
-      break;
-    case S_WENT_HIGH:
-      if (now - s.t >= 10) { digitalWrite(s.trig, LOW); s.state = S_WENT_LOW; s.t = now; }
-      break;
-    case S_WENT_LOW:
-      if (digitalRead(s.echo) == HIGH) { s.t = now; }
-      else if (now - s.t > 30000) { s.dist = 999; s.state = S_IDLE; }
-      else {
-        unsigned long dt = now - s.t;
-        if (dt > 2) { s.dist = dt * 0.034 / 2; s.state = S_IDLE; }
-      }
-      break;
-  }
+bool validCoord(float lat, float lng) {
+  return lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 && !(lat == 0 && lng == 0);
 }
-void checkPass(USS &s, int dir) {
-  bool near = s.dist < THRESHOLD && s.dist > 0;
-  unsigned long now = millis();
-  if (near && !s.blocked) { s.blocked = true; s.blockedSince = now; }
-  else if (!near && s.blocked) {
-    if (now - s.blockedSince >= 150) {
-      passengers += dir;
-      if (passengers < 0) passengers = 0;
-      Serial.print(dir > 0 ? "ENTER " : "EXIT ");
-      Serial.println(passengers);
-      digitalWrite(s.relay, LOW); delay(50); digitalWrite(s.relay, HIGH);
-    }
-    s.blocked = false;
-  }
-}
-void parseNMEA(String line) {
-  if (line.length() < 6) return;
-  if (!line.startsWith("$GP") && !line.startsWith("$GN")) return;
-  String type = line.substring(3, 6);
-  if (type != "GGA" && type != "GLL" && type != "RMC") return;
-  int ci = 0, commas[12];
-  for (int i = 0; i < 12; i++) {
-    int idx = line.indexOf(',', ci);
-    commas[i] = (idx < 0) ? -1 : idx; ci = idx + 1;
-  }
-  float lat = 0, lng = 0;
-  bool hasPos = false;
-  if (type == "RMC") {
-    if (commas[3] >= 0 && commas[4] >= 0 && commas[5] >= 0 && commas[6] >= 0) {
-      String latStr = line.substring(commas[3] + 1, commas[4]);
-      String ns = line.substring(commas[4] + 1, commas[5]);
-      String lngStr = line.substring(commas[5] + 1, commas[6]);
-      String ew = line.substring(commas[6] + 1, commas[7]);
-      if (latStr.length() > 0 && lngStr.length() > 0) {
-        float lt = atof(latStr.c_str());
-        int ld = int(lt / 100);
-        lat = ld + (lt - ld * 100) / 60;
-        if (ns[0] == 'S') lat = -lat;
-        float ln = atof(lngStr.c_str());
-        int nd = int(ln / 100);
-        lng = nd + (ln - nd * 100) / 60;
-        if (ew[0] == 'W') lng = -lng;
-        hasPos = true;
-      }
-      if (commas[7] >= 0) {
-        String s = line.substring(commas[7] + 1, commas[8]);
-        if (s.length() > 0) gpsSpeed = round(atof(s.c_str()) * 1.852);
-      }
-    }
-  } else {
-    int li = (type == "GGA") ? 2 : 1;
-    if (commas[li] >= 0 && commas[li+3] >= 0) {
-      String latStr = line.substring(commas[li] + 1, commas[li+1]);
-      String ns = line.substring(commas[li+1] + 1, commas[li+2]);
-      String lngStr = line.substring(commas[li+2] + 1, commas[li+3]);
-      String ew = line.substring(commas[li+3] + 1, commas[li+4]);
-      if (latStr.length() > 0 && lngStr.length() > 0) {
-        float lt = atof(latStr.c_str());
-        int ld = int(lt / 100);
-        lat = ld + (lt - ld * 100) / 60;
-        if (ns[0] == 'S') lat = -lat;
-        float ln = atof(lngStr.c_str());
-        int nd = int(ln / 100);
-        lng = nd + (ln - nd * 100) / 60;
-        if (ew[0] == 'W') lng = -lng;
-        hasPos = true;
-      }
-    }
-  }
-  if (hasPos && lat >= 1 && lat <= 90 && lng >= 50 && lng <= 200) {
-    gpsLat = lat; gpsLng = lng;
-    gpsFixed = true; lastGpsFix = millis();
-  }
+void parseLatLng(const String& latStr, const String& lngStr, char latDir, char lngDir) {
+  if (latStr.length() == 0 || lngStr.length() == 0) return;
+  float lat = atof(latStr.c_str());
+  int latDeg = int(lat / 100);
+  gpsLat = latDeg + (lat - latDeg * 100) / 60;
+  if (latDir == 'S') gpsLat = -gpsLat;
+  float lng = atof(lngStr.c_str());
+  int lngDeg = int(lng / 100);
+  gpsLng = lngDeg + (lng - lngDeg * 100) / 60;
+  if (lngDir == 'W') gpsLng = -gpsLng;
 }
 void readGps() {
   while (gps.available()) {
     String line = gps.readStringUntil('\n');
-    line.trim();
-    parseNMEA(line);
+    if (line.startsWith("$GPGGA") || line.startsWith("$GNGGA")) {
+      char buf[80]; line.toCharArray(buf, 80);
+      char* ptr = buf; int field = 0, fix = 0;
+      char latS[16]="", lngS[16]="", latDir='N', lngDir='E';
+      while (char* t = strtok(ptr, ",")) {
+        ptr = NULL;
+        if (field == 2) strcpy(latS, t);
+        if (field == 3 && strlen(t) > 0) latDir = t[0];
+        if (field == 4) strcpy(lngS, t);
+        if (field == 5 && strlen(t) > 0) lngDir = t[0];
+        if (field == 6) fix = atoi(t);
+        field++;
+      }
+      if (fix > 0) {
+        parseLatLng(latS, lngS, latDir, lngDir);
+        if (validCoord(gpsLat, gpsLng)) { gpsFixed = true; lastGpsFix = millis(); }
+      }
+    }
+    if (line.startsWith("$GPVTG") || line.startsWith("$GNVTG")) {
+      char buf[80]; line.toCharArray(buf, 80);
+      char* ptr = buf; int field = 0;
+      while (char* t = strtok(ptr, ",")) { ptr = NULL; if (field == 7) { gpsSpeed = round(atof(t) * 1.852); break; } field++; }
+    }
   }
 }
-void sendLocation() {
-  if (busId.length() == 0 || !gpsFixed) return;
-  char body[300];
-  snprintf(body, sizeof(body),
-    "{\"busId\":\"%s\",\"latitude\":%.6f,\"longitude\":%.6f,\"speed\":%.0f,\"passengersInside\":%d}",
-    busId.c_str(), gpsLat, gpsLng, gpsSpeed, passengers);
-  HTTPClient http;
-  http.begin(locationUrl);
-  http.addHeader("Content-Type", "application/json");
-  int code = http.POST(String(body));
-  http.end();
-  Serial.print("POST ");
-  Serial.print(code);
-  Serial.print(" GPS: "); Serial.print(gpsLat, 4);
-  Serial.print(", "); Serial.print(gpsLng, 4);
-  Serial.print(" "); Serial.print(gpsSpeed, 0);
-  Serial.print("km/h Pass:"); Serial.println(passengers);
+int extractJsonInt(const String& json, const String& key) {
+  String search = "\"" + key + "\":";
+  int start = json.indexOf(search);
+  if (start < 0) return 0;
+  start += search.length();
+  int end = json.indexOf(",", start);
+  if (end < 0) end = json.indexOf("}", start);
+  return json.substring(start, end).toInt();
 }
-void sendPassengersOnly() {
-  if (busId.length() == 0) return;
-  char body[120];
-  snprintf(body, sizeof(body),
-    "{\"busId\":\"%s\",\"passengersInside\":%d}",
-    busId.c_str(), passengers);
+void fetchConfig() {
+  if (WiFi.status() != WL_CONNECTED) return;
   HTTPClient http;
-  http.begin(passengerUrl);
-  http.addHeader("Content-Type", "application/json");
-  int code = http.POST(String(body));
+  http.begin(String(CONFIG_URL) + String(BUS_ID));
+  http.setTimeout(3000);
+  if (http.GET() == 200) {
+    String body = http.getString();
+    int seats = extractJsonInt(body, "totalSeats");
+    if (seats > 0) totalSeats = seats;
+  }
   http.end();
-  Serial.print("PASS "); Serial.print(code);
-  Serial.print(" Count:"); Serial.println(passengers);
+}
+bool httpPost(const char* url, const String& body) {
+  if (WiFi.status() != WL_CONNECTED) return false;
+  HTTPClient http;
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+  http.setTimeout(5000);
+  int code = http.POST(body);
+  http.end();
+  return (code == 200 || code == 201);
+}
+void sendLocation() {
+  String body = "{\"busId\":\"" + String(BUS_ID) + "\",\"lat\":" + String(gpsLat, 6) + ",\"lng\":" + String(gpsLng, 6) + ",\"speed\":" + String(gpsSpeed) + ",\"seats\":" + String(totalSeats - passengers) + ",\"inside\":" + String(passengers) + ",\"route\":\"" + routeName + "\",\"gpsFixed\":" + (gpsFixed ? "true" : "false") + "}";
+  bool ok = httpPost(GPS_URL, body);
+  Serial.print("> " + String(ok ? "OK" : "FAIL") + " ");
+  if (gpsFixed) { Serial.print(String(gpsLat, 4) + "," + String(gpsLng, 4) + " " + String(gpsSpeed) + "km/h"); }
+  else { Serial.print("GPS:searching..."); }
+  Serial.println(" Pass:" + String(passengers));
+}
+void sendCount() {
+  String body = "{\"busId\":\"" + String(BUS_ID) + "\",\"inside\":" + String(passengers) + ",\"seats\":" + String(totalSeats - passengers) + "}";
+  Serial.println("> COUNT " + String(httpPost(COUNT_URL, body) ? "OK" : "FAIL") + " Pass:" + String(passengers));
 }
 void setup() {
   Serial.begin(115200);
-  Serial.println("\n=== TN BusTrack ===");
-  Serial.println(busId);
+  gps.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
   pinMode(TRIG_A, OUTPUT); pinMode(ECHO_A, INPUT);
   pinMode(TRIG_B, OUTPUT); pinMode(ECHO_B, INPUT);
-  pinMode(RELAY_A, OUTPUT); pinMode(RELAY_B, OUTPUT);
-  digitalWrite(RELAY_A, HIGH); digitalWrite(RELAY_B, HIGH);
-  digitalWrite(TRIG_A, LOW); digitalWrite(TRIG_B, LOW);
-  gps.begin(115200, SERIAL_8N1, GPS_RX, GPS_TX);
-  delay(500);
-  connectWiFi();
+  Serial.print("WiFi...");
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  int tries = 0;
+  while (WiFi.status() != WL_CONNECTED && tries < 40) { delay(500); Serial.print("."); tries++; }
+  if (WiFi.status() == WL_CONNECTED) { Serial.println(" OK"); Serial.print("IP: "); Serial.println(WiFi.localIP()); fetchConfig(); }
+  else { Serial.println(" FAILED!"); }
+  Serial.print("Bus: "); Serial.println(BUS_ID);
+  Serial.println("Ready.");
 }
 void loop() {
-  if (WiFi.status() != WL_CONNECTED) connectWiFi();
   readGps();
-  if (gpsFixed && millis() - lastGpsFix > 15000) { gpsFixed = false; gpsSpeed = 0; }
-  tickSensor(sa); tickSensor(sb);
+  long dA = readDistance(TRIG_A, ECHO_A);
+  long dB = readDistance(TRIG_B, ECHO_B);
+  bool a = dA > THRESHOLD && dA < 999;
+  bool b = dB > THRESHOLD && dB < 999;
+  if (state == 3) { if (!a && !b) { debounce = 0; state = 0; } }
+  else if (state == 0) {
+    if (a && !b) { if (++debounce >= 2) { debounce = 0; state = 1; } }
+    else if (b && !a) { if (++debounce >= 2) { debounce = 0; state = 2; } }
+    else { debounce = 0; }
+  } else if (a && b) {
+    if (++debounce >= 2) {
+      debounce = 0;
+      if (state == 1) { passengers++; state = 3; pendingPassengers = passengers; Serial.print("ENTER "); Serial.println(passengers); }
+      else if (state == 2) { passengers--; if (passengers < 0) passengers = 0; state = 3; pendingPassengers = passengers; Serial.print("EXIT "); Serial.println(passengers); }
+    }
+  } else { debounce = 0; }
   unsigned long now = millis();
-  if (now - lastSensorScan >= SCAN_INTERVAL) { checkPass(sa, 1); checkPass(sb, -1); }
-  if (now - lastSend >= SEND_INTERVAL) {
-    lastSend = now;
-    if (gpsFixed) sendLocation(); else sendPassengersOnly();
-  }
+  if (gpsFixed && now - lastGpsFix > 30000) { gpsFixed = false; gpsLat = 0; gpsLng = 0; Serial.println("GPS LOST"); }
+  if (pendingPassengers >= 0 && (now - lastCountSend > COUNT_INTERVAL)) { lastCountSend = now; sendCount(); pendingPassengers = -1; }
+  if (now - lastGpsSend > GPS_INTERVAL) { lastGpsSend = now; sendLocation(); }
+  delay(5);
 }
