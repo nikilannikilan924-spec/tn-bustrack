@@ -33,11 +33,12 @@ function makeBusIcon(bus: LiveBus, size: number) {
   const label = bus.number.split(' ').pop() || bus.number;
   return L.divIcon({
     className: '',
-    html: `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+    html: `<div style="display:flex;flex-direction:column;align-items:center;gap:1px">
       <div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4);cursor:pointer"></div>
       <span style="font-size:9px;font-weight:700;color:#1e293b;background:rgba(255,255,255,0.9);padding:0 4px;border-radius:4px;white-space:nowrap">${label}</span>
+      <span style="font-size:8px;font-weight:600;color:#0EA5E9;background:rgba(255,255,255,0.95);padding:0 4px;border-radius:3px;white-space:nowrap">${bus.currentStop}</span>
     </div>`,
-    iconSize: [size, size + 18],
+    iconSize: [size, size + 34],
     iconAnchor: [size / 2, size / 2],
   });
 }
