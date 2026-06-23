@@ -100,18 +100,32 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
 
     buses.forEach((bus) => {
       seen.add(bus.id);
-      const latlng: L.LatLngExpression = [bus.latitude, bus.longitude];
+      const targetLatLng: L.LatLngExpression = [bus.latitude, bus.longitude];
 
       if (markers.has(bus.id)) {
         const marker = markers.get(bus.id)!;
-        marker.setLatLng(latlng);
+        const cur = marker.getLatLng();
+        if (cur.lat !== bus.latitude || cur.lng !== bus.longitude) {
+          const startLat = cur.lat, startLng = cur.lng;
+          const endLat = bus.latitude, endLng = bus.longitude;
+          const startTime = performance.now();
+          const duration = 1500;
+          function animate(time: number) {
+            const t = Math.min((time - startTime) / duration, 1);
+            const lat = startLat + (endLat - startLat) * t;
+            const lng = startLng + (endLng - startLng) * t;
+            marker.setLatLng([lat, lng]);
+            if (t < 1) requestAnimationFrame(animate);
+          }
+          requestAnimationFrame(animate);
+        }
         marker.setIcon(makeBusIcon(bus, 14));
         if (marker.getPopup()) {
           marker.setPopupContent(makePopupHtml(bus));
         }
       } else {
         const icon = makeBusIcon(bus, 14);
-        const marker = L.marker(latlng, { icon });
+        const marker = L.marker(targetLatLng, { icon });
         marker.bindPopup(makePopupHtml(bus), { closeButton: false });
         marker.on('click', () => onBusSelect(bus.id));
         marker.addTo(map);
