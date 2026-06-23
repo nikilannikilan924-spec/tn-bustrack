@@ -91,6 +91,15 @@ app.post('/api/buses/update', (req, res) => {
   if (!busId) return res.status(400).json({ error: 'busId required' });
   if (deletedBuses.has(busId)) return res.status(403).json({ error: 'Bus deleted' });
 
+  const prev = busPositions[busId];
+  const validCoord = lat && lng && Math.abs(lat) > 0.01 && Math.abs(lng) > 0.01;
+
+  if (!validCoord && prev) {
+    lat = prev.lat;
+    lng = prev.lng;
+    speed = 0;
+  }
+
   const cfg = busConfigs[busId] || {};
   const routeKey = cfg.routeKey || 'namakkal-salem';
   const customStops = cfg.stops;
