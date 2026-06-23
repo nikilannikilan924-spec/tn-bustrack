@@ -97,8 +97,10 @@ app.post('/api/buses/update', (req, res) => {
   const { stop, distKm } = getNearestStop(lat, lng, routeKey, customStops);
   const nextStops = getNextStops(stop.name, routeKey, lat, lng, customStops);
 
+  const routeId = cfg.routeKey || busId;
   const busData = {
     busId,
+    routeId,
     lat,
     lng,
     speed: speed || 0,
@@ -213,11 +215,12 @@ app.post('/api/bus/create', (req, res) => {
   if (bus.busId) bus.busId = bus.busId.trim();
   memoryBuses.push(bus);
   const busId = bus.busId || bus.number || bus.id;
+  const routeKey = busId;
   busConfigs[busId] = {
     busId,
     totalSeats: bus.seatCapacity || 42,
     routeName: bus.routeName || 'Default',
-    routeKey: 'namakkal-salem',
+    routeKey,
     driverName: 'Unknown',
     busNumber: bus.number || busId,
     stops: bus.stops || [],
@@ -339,22 +342,31 @@ app.get('/api/device/config', (req, res) => {
 
 // ── HEALTH CHECK ─────────────────────────────────────────────
 // ── STOPS LIST ───────────────────────────────────────────────
-const ALL_STOPS = [];
-Object.entries(STOPS).forEach(([routeKey, stops]) => {
-  stops.forEach((stop, i) => {
-    ALL_STOPS.push({
-      id: `${routeKey}-${i}`,
-      name: stop.name,
-      lat: stop.lat,
-      lng: stop.lng,
-      sequence: i + 1,
-      routeId: routeKey,
+function getAllStops() {
+  const result = [];
+  const seen = new Set();
+  Object.entries(busConfigs).forEach(([busId, cfg]) => {
+    const routeKey = cfg.routeKey || busId;
+    (cfg.stops || []).forEach((stop, i) => {
+      const key = `${stop.name}-${stop.lat}-${stop.lng}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push({
+          id: `${routeKey}-${i}`,
+          name: stop.name,
+          lat: stop.lat,
+          lng: stop.lng,
+          sequence: i + 1,
+          routeId: routeKey,
+        });
+      }
     });
   });
-});
+  return result;
+}
 
 app.get('/api/stops', (_req, res) => {
-  res.json(ALL_STOPS);
+  res.json(getAllStops());
 });
 
 // ── ALERTS ────────────────────────────────────────────────────
