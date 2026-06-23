@@ -65,6 +65,7 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const centeredRef = useRef(false);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -143,14 +144,15 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || buses.length === 0) return;
+    if (!map || buses.length === 0 || centeredRef.current) return;
     const hasValidCoord = buses.some(b => b.latitude !== 0 || b.longitude !== 0);
     if (!hasValidCoord) return;
 
     const valid = buses.filter(b => b.latitude !== 0 || b.longitude !== 0);
     if (valid.length === 0) return;
     if (valid.length === 1) {
-      map.setView([valid[0].latitude, valid[0].longitude], map.getZoom(), { animate: true });
+      map.setView([valid[0].latitude, valid[0].longitude], 15, { animate: true });
+      centeredRef.current = true;
     } else {
       const bounds = L.latLngBounds(valid.map(b => [b.latitude, b.longitude] as L.LatLngExpression));
       map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12, animate: true });
