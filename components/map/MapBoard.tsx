@@ -61,7 +61,7 @@ export function MapBoard() {
     });
 
     fetchBuses();
-    const interval = setInterval(fetchBuses, 5000);
+    const interval = setInterval(fetchBuses, 2000);
     return () => { unsub1(); unsub2(); clearInterval(interval); };
   }, []);
 

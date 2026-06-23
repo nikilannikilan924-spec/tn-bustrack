@@ -9,7 +9,7 @@ export function getSocket() {
     const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin;
     socket = io(socketUrl, {
       path: '/socket.io',
-      transports: ['websocket']
+      transports: ['websocket', 'polling']
     });
 
     socket.on('connect', () => {
