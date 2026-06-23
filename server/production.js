@@ -385,22 +385,21 @@ app.get('/health', (req, res) => {
 
 
 
-// ── STALE BUS CLEANUP (every 10s, remove buses offline >30s) ─
+// ── STALE BUS CLEANUP (every 5s, remove buses offline >12s) ─
 setInterval(() => {
   const now = Date.now();
   Object.keys(busPositions).forEach((busId) => {
     const bus = busPositions[busId];
     if (!bus || !bus.lastUpdate) return;
     const age = now - new Date(bus.lastUpdate).getTime();
-    if (age > 30000) {
+    if (age > 12000) {
       console.log(`Removing stale bus ${busId} (offline ${Math.round(age / 1000)}s)`);
       delete busPositions[busId];
-      delete busConfigs[busId];
       delete gpsHistory[busId];
       io.to('all-buses').emit('busRemoved', busId);
     }
   });
-}, 10000);
+}, 5000);
 
 // ── SOCKET.IO ────────────────────────────────────────────────
 io.on('connection', (socket) => {
