@@ -48,6 +48,7 @@ int passengers = 0;
 int state = 0;
 int pendingPassengers = -1; // -1 means no pending update
 int debounce = 0;          // consecutive stable readings counter
+unsigned long stateStart = 0; // when current state started (for timeout)
 
 // ── TIMING ──────────────────────────────────────────────────
 unsigned long lastGpsSend = 0;
@@ -305,6 +306,7 @@ void setup() {
 //  MAIN LOOP
 // ────────────────────────────────────────────────────────────
 void loop() {
+  unsigned long now = millis();
   readGps();
 
   long dA = readDistance(TRIG_A, ECHO_A);
@@ -316,18 +318,19 @@ void loop() {
   if (state == 3) {
     if (!a && !b) { debounce = 0; state = 0; }
   } else if (state == 0) {
-    if (a && !b) { if (++debounce >= 2) { debounce = 0; state = 1; } }
-    else if (b && !a) { if (++debounce >= 2) { debounce = 0; state = 2; } }
+    if (a && !b) { if (++debounce >= 2) { debounce = 0; state = 1; stateStart = now; } }
+    else if (b && !a) { if (++debounce >= 2) { debounce = 0; state = 2; stateStart = now; } }
     else { debounce = 0; }
   } else if (a && b) {
     if (++debounce >= 2) {
       debounce = 0;
+      stateStart = now;
       if (state == 1) { passengers++; state = 3; pendingPassengers = passengers; Serial.print("ENTER "); Serial.println(passengers); }
       else if (state == 2) { passengers--; if (passengers < 0) passengers = 0; state = 3; pendingPassengers = passengers; Serial.print("EXIT "); Serial.println(passengers); }
     }
+  } else if (state > 0 && state < 3 && now - stateStart > 2000) {
+    debounce = 0; state = 0;
   } else { debounce = 0; }
-
-  unsigned long now = millis();
 
   // Clear fix if stale (>30s since last valid GPS)
   if (gpsFixed && now - lastGpsFix > 30000) {
