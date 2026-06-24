@@ -39,16 +39,16 @@ function reverseGeocode(lat, lng, busId) {
   if (GEO_CACHE[key]) {
     const cached = GEO_CACHE[key];
     if (busPositions[busId]) {
-      busPositions[busId].area = cached.area;
-      busPositions[busId].road = cached.road;
-      busPositions[busId].city = cached.city;
+      if (cached.area) busPositions[busId].area = cached.area;
+      if (cached.road) busPositions[busId].road = cached.road;
+      if (cached.city) busPositions[busId].city = cached.city;
     }
     return;
   }
   const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
-  const req = https.get(url, { headers: { 'User-Agent': 'TN-BusTrack/1.0' }, timeout: 3000 }, (res) => {
+  const req = https.get(url, { headers: { 'User-Agent': 'TN-BusTrack/1.0' } }, (res) => {
     let data = '';
-    res.on('data', c => data += c);
+    res.on('data', c => { try { data += c; } catch(_){} });
     res.on('end', () => {
       try {
         const j = JSON.parse(data);
@@ -60,16 +60,17 @@ function reverseGeocode(lat, lng, busId) {
         };
         GEO_CACHE[key] = geo;
         if (busPositions[busId]) {
-          busPositions[busId].area = geo.area;
-          busPositions[busId].road = geo.road;
-          busPositions[busId].city = geo.city;
+          if (geo.area) busPositions[busId].area = geo.area;
+          if (geo.road) busPositions[busId].road = geo.road;
+          if (geo.city) busPositions[busId].city = geo.city;
           io.to('all-buses').emit('busUpdate', busPositions[busId]);
         }
       } catch (_) {}
     });
+    res.on('error', () => {});
   });
   req.on('error', () => {});
-  req.end();
+  req.setTimeout(5000, () => { req.destroy(); });
 }
 
 function getDistanceKm(lat1, lng1, lat2, lng2) {
