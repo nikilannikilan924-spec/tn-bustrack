@@ -15,6 +15,9 @@ interface LiveBus {
   number: string;
   routeName: string;
   currentStop: string;
+  area: string;
+  road: string;
+  city: string;
   status: BusStatus;
   speed: number;
   latitude: number;
@@ -32,6 +35,9 @@ function normalizeBus(raw: any): LiveBus {
     number: raw.busNumber || raw.number || raw.busId || 'Unknown',
     routeName: raw.route || raw.routeName || 'Unknown Route',
     currentStop: raw.currentStop || 'Unknown',
+    area: raw.area || raw.currentStop || '',
+    road: raw.road || raw.route || '',
+    city: raw.city || '',
     status: raw.status || (raw.speed > 0 ? 'running' : 'stopped'),
     speed: raw.speed || 0,
     latitude: raw.lat ?? raw.latitude ?? 0,

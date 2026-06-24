@@ -8,6 +8,9 @@ interface LiveBus {
   number: string;
   routeName: string;
   currentStop: string;
+  area: string;
+  road: string;
+  city: string;
   status: 'running' | 'delayed' | 'stopped';
   speed: number;
   latitude: number;

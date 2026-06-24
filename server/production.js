@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -30,6 +31,46 @@ let gpsHistory = {};
 
 // ── HELPERS ─────────────────────────────────────────────────
 function deg2rad(deg) { return deg * (Math.PI / 180); }
+
+const GEO_CACHE = {};
+
+function reverseGeocode(lat, lng, busId) {
+  const key = `${lat.toFixed(3)},${lng.toFixed(3)}`;
+  if (GEO_CACHE[key]) {
+    const cached = GEO_CACHE[key];
+    if (busPositions[busId]) {
+      busPositions[busId].area = cached.area;
+      busPositions[busId].road = cached.road;
+      busPositions[busId].city = cached.city;
+    }
+    return;
+  }
+  const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
+  const req = https.get(url, { headers: { 'User-Agent': 'TN-BusTrack/1.0' }, timeout: 3000 }, (res) => {
+    let data = '';
+    res.on('data', c => data += c);
+    res.on('end', () => {
+      try {
+        const j = JSON.parse(data);
+        const a = j.address || {};
+        const geo = {
+          area: a.suburb || a.neighbourhood || a.village || a.town || a.municipality || a.county || '',
+          road: a.road || a.pedestrian || a.street || '',
+          city: a.city || a.town || a.county || a.state_district || a.state || '',
+        };
+        GEO_CACHE[key] = geo;
+        if (busPositions[busId]) {
+          busPositions[busId].area = geo.area;
+          busPositions[busId].road = geo.road;
+          busPositions[busId].city = geo.city;
+          io.to('all-buses').emit('busUpdate', busPositions[busId]);
+        }
+      } catch (_) {}
+    });
+  });
+  req.on('error', () => {});
+  req.end();
+}
 
 function getDistanceKm(lat1, lng1, lat2, lng2) {
   const R = 6371;
@@ -113,6 +154,9 @@ app.post('/api/buses/update', (req, res) => {
     busNumber: cfg.busNumber || busId,
     gpsFixed: gpsFixed || false,
     currentStop: stop.name,
+    area: prev?.area || stop.name || '',
+    road: prev?.road || cfg.routeName || '',
+    city: prev?.city || '',
     distFromStop: distKm.toFixed(2),
     nextStops,
     lastUpdate: new Date().toISOString(),
@@ -128,6 +172,10 @@ app.post('/api/buses/update', (req, res) => {
   io.to('all-buses').emit('busUpdate', busData);
 
   res.json({ ok: true });
+
+  if (gpsFixed && validCoord(lat, lng)) {
+    reverseGeocode(Number(lat), Number(lng), busId);
+  }
 });
 
 // ── ESP32 SENDS COUNT UPDATE ────────────────────────────────
