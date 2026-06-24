@@ -32,9 +32,9 @@ const LiveMap = dynamic(() => import('@/components/map/LiveMap'), { ssr: false }
 function normalizeBus(raw: any): LiveBus {
   return {
     id: raw.busId || raw.id,
-    number: raw.busNumber || raw.number || raw.busId || 'Unknown',
-    routeName: raw.route || raw.routeName || 'Unknown Route',
-    currentStop: raw.currentStop || 'Unknown',
+    number: raw.busNumber || raw.number || raw.busId,
+    routeName: raw.route || raw.routeName || raw.busId,
+    currentStop: raw.currentStop || '',
     area: raw.area || raw.currentStop || '',
     road: raw.road || raw.route || '',
     city: raw.city || '',

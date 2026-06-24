@@ -64,8 +64,8 @@ export function normalizeAPIBus(raw: any, allStops: Stop[]): Bus {
   const seatCapacity = raw.seatCapacity ?? raw.totalSeats ?? 42;
   const inside = raw.inside ?? raw.passengersInside ?? 0;
   const busId = raw.busId || raw.id;
-  const busNumber = raw.busNumber || raw.number || busId || 'N/A';
-  const routeName = raw.route || raw.routeName || 'Unknown Route';
+  const busNumber = raw.busNumber || raw.number || busId;
+  const routeName = raw.route || raw.routeName || busId;
 
   const routeStops = allStops.filter(s => s.routeId === busId);
   const stopsWithRouteKey = routeStops.length > 0 ? routeStops : allStops.filter(s => routeName.toLowerCase().includes(s.routeId || ''));

@@ -30,7 +30,7 @@ const char* CONFIG_URL = "https://tn-bustrack-production.up.railway.app/api/conf
 
 // ── BUS CONFIG ──────────────────────────────────────────────
 int totalSeats = 42;
-String routeName = "Default";
+String routeName = "";
 
 // ── GPS ─────────────────────────────────────────────────────
 float gpsLat = 0, gpsLng = 0;
