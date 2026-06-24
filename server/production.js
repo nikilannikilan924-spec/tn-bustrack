@@ -108,7 +108,8 @@ app.post('/api/buses/update', (req, res) => {
     speed: speed || 0,
     seats: seats ?? totalSeats,
     inside: inside ?? 0,
-    route: route || cfg.routeName || 'Unknown Route',
+    route: cfg.routeName || route || 'Unknown Route',
+    busNumber: cfg.busNumber || busId,
     gpsFixed: gpsFixed || false,
     currentStop: stop.name,
     distFromStop: distKm.toFixed(2),
@@ -288,6 +289,7 @@ app.post('/api/bus/location', (req, res) => {
   const totalSeats = cfg.totalSeats || 42;
   const busData = {
     busId,
+    routeId: cfg.routeKey || busId,
     totalSeats,
     lat: Number(latitude),
     lng: Number(longitude),
@@ -295,6 +297,7 @@ app.post('/api/bus/location', (req, res) => {
     seats: seatsAvailable ?? totalSeats - (passengersInside || 0),
     inside: passengersInside || 0,
     route: cfg.routeName || 'Unknown',
+    busNumber: cfg.busNumber || busId,
     gpsFixed: true,
     currentStop: stop.name,
     distFromStop: distKm.toFixed(2),
