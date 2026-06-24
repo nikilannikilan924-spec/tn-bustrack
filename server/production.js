@@ -99,6 +99,7 @@ app.post('/api/buses/update', (req, res) => {
 
   const routeId = cfg.routeKey || busId;
   const totalSeats = cfg.totalSeats || 42;
+  const pInside = inside ?? (prev ? prev.inside : 0);
   const busData = {
     busId,
     routeId,
@@ -106,8 +107,8 @@ app.post('/api/buses/update', (req, res) => {
     lat,
     lng,
     speed: speed || 0,
-    seats: seats ?? totalSeats,
-    inside: inside ?? 0,
+    seats: totalSeats - pInside,
+    inside: pInside,
     route: cfg.routeName || route || 'Unknown Route',
     busNumber: cfg.busNumber || busId,
     gpsFixed: gpsFixed || false,
@@ -131,18 +132,21 @@ app.post('/api/buses/update', (req, res) => {
 
 // ── ESP32 SENDS COUNT UPDATE ────────────────────────────────
 app.post('/api/buses/count', (req, res) => {
-  let { busId, inside, seats } = req.body;
+  let { busId, inside } = req.body;
   if (busId) busId = busId.trim();
   if (!busId) return res.status(400).json({ error: 'busId required' });
   if (deletedBuses.has(busId)) return res.status(403).json({ error: 'Bus deleted' });
 
+  const pInside = inside ?? 0;
   if (busPositions[busId]) {
-    busPositions[busId].inside = inside;
-    busPositions[busId].seats = seats;
+    const cfg = busConfigs[busId] || {};
+    const totalSeats = cfg.totalSeats || 42;
+    busPositions[busId].inside = pInside;
+    busPositions[busId].seats = totalSeats - pInside;
   }
 
-  io.to(`bus-${busId}`).emit('countUpdate', { busId, inside, seats });
-  io.to('all-buses').emit('countUpdate', { busId, inside, seats });
+  io.to(`bus-${busId}`).emit('countUpdate', { busId, inside: pInside });
+  io.to('all-buses').emit('countUpdate', { busId, inside: pInside });
 
   res.json({ ok: true });
 });
