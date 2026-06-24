@@ -43,6 +43,7 @@ bool validCoord(float lat, float lng) {
 }
 
 // ── PASSENGER COUNT ─────────────────────────────────────────
+const int THRESHOLD = 40; // cm — person crossing door frame
 int passengers = 0;
 int state = 0;
 int pendingPassengers = -1; // -1 means no pending update

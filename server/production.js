@@ -98,13 +98,15 @@ app.post('/api/buses/update', (req, res) => {
   const nextStops = getNextStops(stop.name, routeKey, lat, lng, customStops);
 
   const routeId = cfg.routeKey || busId;
+  const totalSeats = cfg.totalSeats || 42;
   const busData = {
     busId,
     routeId,
+    totalSeats,
     lat,
     lng,
     speed: speed || 0,
-    seats: seats ?? 42,
+    seats: seats ?? totalSeats,
     inside: inside ?? 0,
     route: route || cfg.routeName || 'Unknown Route',
     gpsFixed: gpsFixed || false,
@@ -283,12 +285,14 @@ app.post('/api/bus/location', (req, res) => {
   const customStops = cfg.stops;
   const { stop, distKm } = getNearestStop(Number(latitude), Number(longitude), routeKey, customStops);
   const nextStops = getNextStops(stop.name, routeKey, Number(latitude), Number(longitude), customStops);
+  const totalSeats = cfg.totalSeats || 42;
   const busData = {
     busId,
+    totalSeats,
     lat: Number(latitude),
     lng: Number(longitude),
     speed: speed || 0,
-    seats: seatsAvailable ?? (cfg.totalSeats || 42) - (passengersInside || 0),
+    seats: seatsAvailable ?? totalSeats - (passengersInside || 0),
     inside: passengersInside || 0,
     route: cfg.routeName || 'Unknown',
     gpsFixed: true,
