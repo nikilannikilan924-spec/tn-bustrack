@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
-import { subscribeBusLocationUpdate, subscribeBusRemoved } from '@/lib/socket';
+import { subscribeCurrentBuses, subscribeSingleBusUpdate, subscribeBusRemoved } from '@/lib/socket';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { useLanguage } from '@/lib/LanguageContext';
@@ -25,6 +25,7 @@ interface LiveBus {
   seatsAvailable: number;
   seatCapacity: number;
   nextStops: { name: string; distKm: string; etaMin: number }[];
+  gpsFixed?: boolean;
 }
 
 const LiveMap = dynamic(() => import('@/components/map/LiveMap'), { ssr: false });
@@ -45,6 +46,7 @@ function normalizeBus(raw: any): LiveBus {
     seatsAvailable: raw.seats ?? raw.seatsAvailable ?? 0,
     seatCapacity: raw.seatCapacity ?? raw.totalSeats ?? 42,
     nextStops: raw.nextStops || [],
+    gpsFixed: raw.gpsFixed,
   };
 }
 
@@ -55,20 +57,30 @@ export function MapBoard() {
   const [stopSearch, setStopSearch] = useState('');
 
   useEffect(() => {
-    const unsub1 = subscribeBusLocationUpdate((payload: any) => {
-      const raw = Array.isArray(payload) ? payload : [payload];
-      if (Array.isArray(raw)) {
-        setBuses(raw.map(normalizeBus));
-      }
+    const unsub1 = subscribeCurrentBuses((buses: any[]) => {
+      setBuses(buses.map(normalizeBus));
     });
 
-    const unsub2 = subscribeBusRemoved((busId: string) => {
+    const unsub2 = subscribeSingleBusUpdate((raw: any) => {
+      const updated = normalizeBus(raw);
+      setBuses(prev => {
+        const idx = prev.findIndex(b => b.id === updated.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = updated;
+          return next;
+        }
+        return [...prev, updated];
+      });
+    });
+
+    const unsub3 = subscribeBusRemoved((busId: string) => {
       setBuses(prev => prev.filter(b => b.id !== busId));
     });
 
     fetchBuses();
     const interval = setInterval(fetchBuses, 4000);
-    return () => { unsub1(); unsub2(); clearInterval(interval); };
+    return () => { unsub1(); unsub2(); unsub3(); clearInterval(interval); };
   }, []);
 
   async function fetchBuses() {

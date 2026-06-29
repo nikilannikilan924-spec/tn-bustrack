@@ -1,16 +1,17 @@
 // ============================================================
-//  TN BusTrack — ESP32 Firmware v2 (fast response)
-//  Hardware: ESP32 + NEO-6M + HC-SR04 x2 + Relay
+//  TN BusTrack — ESP32 Firmware v3
+//  Hardware: ESP32 + NEO-6M + HC-SR04 x2
+//  Features: WiFi config portal, OTA, GPS filter
 // ============================================================
 
 #include <WiFi.h>
+#include <WebServer.h>
+#include <Preferences.h>
 #include <HTTPClient.h>
+#include <ArduinoOTA.h>
 
-// ── CHANGE THESE 3 LINES ────────────────────────────────────
-const char* WIFI_SSID     = "SSID";
-const char* WIFI_PASSWORD = "Nikilan31";
-const char* BUS_ID        = "M31";
-// ────────────────────────────────────────────────────────────
+// ── CONFIG (can be changed via WiFi portal) ────────────────
+String busId = "M31";
 // ────────────────────────────────────────────────────────────
 
 // ── SERVER URLs ─────────────────────────────────────────────
@@ -26,6 +27,7 @@ const char* CONFIG_URL = "https://tn-bustrack-production.up.railway.app/api/conf
 #define ECHO_A 14
 #define TRIG_B 27
 #define ECHO_B 15
+#define LED_BUILTIN 2
 // ────────────────────────────────────────────────────────────
 
 // ── BUS CONFIG ──────────────────────────────────────────────
@@ -39,23 +41,208 @@ unsigned long lastGpsFix = 0;
 bool gpsFixed = false;
 HardwareSerial gps(2);
 
+// GPS moving average filter (5 samples)
+#define GPS_FILTER_SIZE 5
+float latHistory[GPS_FILTER_SIZE] = {0};
+float lngHistory[GPS_FILTER_SIZE] = {0};
+int gpsFilterIndex = 0;
+
+void addGpsSample(float lat, float lng) {
+  latHistory[gpsFilterIndex] = lat;
+  lngHistory[gpsFilterIndex] = lng;
+  gpsFilterIndex = (gpsFilterIndex + 1) % GPS_FILTER_SIZE;
+}
+
+void getFilteredGps(float& outLat, float& outLng) {
+  float sumLat = 0, sumLng = 0;
+  int count = 0;
+  for (int i = 0; i < GPS_FILTER_SIZE; i++) {
+    if (latHistory[i] != 0 || lngHistory[i] != 0) {
+      sumLat += latHistory[i];
+      sumLng += lngHistory[i];
+      count++;
+    }
+  }
+  if (count > 0) {
+    outLat = sumLat / count;
+    outLng = sumLng / count;
+  }
+}
+
 bool validCoord(float lat, float lng) {
   return lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 && !(lat == 0 && lng == 0);
 }
 
+// ── WIFI CONFIG PORTAL ─────────────────────────────────────
+Preferences prefs;
+WebServer portalServer(80);
+bool configMode = false;
+String portalSSID = "";
+String portalPass = "";
+
+void saveWifiCreds(const String& ssid, const String& pass, const String& id) {
+  prefs.begin("tn-bustrack", false);
+  prefs.putString("ssid", ssid);
+  prefs.putString("pass", pass);
+  prefs.putString("busid", id);
+  prefs.end();
+}
+
+bool loadWifiCreds(String& ssid, String& pass, String& id) {
+  prefs.begin("tn-bustrack", true);
+  ssid = prefs.getString("ssid", "");
+  pass = prefs.getString("pass", "");
+  id = prefs.getString("busid", "M31");
+  prefs.end();
+  return ssid.length() > 0;
+}
+
+String portalHtml() {
+  return "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
+    "<style>body{font-family:sans-serif;text-align:center;padding:20px;background:#f0f4f8}"
+    "h1{color:#0EA5E9;font-size:24px}.card{background:#fff;border-radius:16px;padding:24px;"
+    "max-width:400px;margin:20px auto;box-shadow:0 4px 12px rgba(0,0,0,0.1)}"
+    "input{width:100%;padding:12px;margin:8px 0;border:2px solid #e2e8f0;border-radius:10px;"
+    "font-size:16px;box-sizing:border-box}button{width:100%;padding:14px;background:#0EA5E9;"
+    "color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:bold;cursor:pointer}"
+    "button:hover{background:#0284C7}.status{color:#64748b;font-size:14px;margin-top:12px}"
+    "</style></head><body>"
+    "<h1>TN BusTrack Setup</h1>"
+    "<div class='card'>"
+    "<form method='POST' action='/save'>"
+    "<p style='text-align:left;font-size:14px;color:#64748b;margin:0 0 4px'>WiFi SSID</p>"
+    "<input name='ssid' placeholder='Enter WiFi name' required>"
+    "<p style='text-align:left;font-size:14px;color:#64748b;margin:8px 0 4px'>WiFi Password</p>"
+    "<input type='password' name='pass' placeholder='Enter WiFi password'>"
+    "<p style='text-align:left;font-size:14px;color:#64748b;margin:8px 0 4px'>Bus ID (from /setup page)</p>"
+    "<input name='busid' value='M31' placeholder='e.g. M31'>"
+    "<button type='submit'>Connect</button>"
+    "</form>"
+    "<p class='status'>ESP32 will reboot and connect to your WiFi</p>"
+    "</div></body></html>";
+}
+
+void handlePortalRoot() {
+  portalServer.send(200, "text/html", portalHtml());
+}
+
+void handlePortalSave() {
+  if (portalServer.hasArg("ssid")) {
+    portalSSID = portalServer.arg("ssid");
+    portalPass = portalServer.hasArg("pass") ? portalServer.arg("pass") : "";
+    String id = portalServer.hasArg("busid") ? portalServer.arg("busid") : "M31";
+    id.trim();
+    saveWifiCreds(portalSSID, portalPass, id);
+    portalServer.send(200, "text/html",
+      "<!DOCTYPE html><html><body style='font-family:sans-serif;text-align:center;padding:40px;background:#f0f4f8'>"
+      "<h1 style='color:#22C55E'>Saved!</h1>"
+      "<p>Connecting to <b>" + portalSSID + "</b>...</p>"
+      "<p style='color:#64748b'>ESP32 will reboot as bus <b>" + id + "</b>. Close this page.</p>"
+      "</body></html>");
+    delay(1000);
+    ESP.restart();
+  } else {
+    portalServer.send(200, "text/html", "<h1>Error: SSID required</h1>");
+  }
+}
+
+void startConfigPortal() {
+  configMode = true;
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP("TN-BusTrack-Setup", NULL);
+  portalServer.on("/", handlePortalRoot);
+  portalServer.on("/save", handlePortalSave);
+  portalServer.begin();
+  Serial.println("\n=== CONFIG MODE ===");
+  Serial.println("Connect WiFi to 'TN-BusTrack-Setup'");
+  Serial.println("Open http://192.168.4.1 in browser");
+  Serial.println("====================");
+  digitalWrite(LED_BUILTIN, LOW);
+}
+
+// ── WIFI CONNECTION ─────────────────────────────────────────
+unsigned long lastWifiCheck = 0;
+const unsigned long WIFI_CHECK_INTERVAL = 5000;
+bool wifiReconnecting = false;
+
+bool connectWifi() {
+  String ssid, pass, id;
+  if (!loadWifiCreds(ssid, pass, id)) {
+    Serial.println("No WiFi credentials saved");
+    return false;
+  }
+  if (id.length() > 0) busId = id;
+  Serial.print("Connecting to ");
+  Serial.print(ssid);
+  Serial.print("...");
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid.c_str(), pass.c_str());
+  WiFi.setAutoReconnect(true);
+  int tries = 0;
+  while (WiFi.status() != WL_CONNECTED && tries < 40) {
+    delay(500);
+    Serial.print(".");
+    tries++;
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi connected");
+    Serial.print("IP: ");
+    Serial.println(WiFi.localIP());
+    digitalWrite(LED_BUILTIN, HIGH);
+    return true;
+  }
+  Serial.println("\nWiFi failed!");
+  return false;
+}
+
+void checkWiFi() {
+  if (configMode) return;
+  if (WiFi.status() == WL_CONNECTED) {
+    if (wifiReconnecting) {
+      wifiReconnecting = false;
+      Serial.println("WiFi reconnected");
+      fetchConfig();
+    }
+    return;
+  }
+  if (millis() - lastWifiCheck < WIFI_CHECK_INTERVAL) return;
+  lastWifiCheck = millis();
+  if (!wifiReconnecting) {
+    wifiReconnecting = true;
+    Serial.print("WiFi lost, reconnecting...");
+  }
+  WiFi.reconnect();
+  Serial.print(".");
+}
+
+// ── OTA UPDATE ──────────────────────────────────────────────
+void setupOTA() {
+  ArduinoOTA.onStart([]() {
+    Serial.println("OTA update started");
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\nOTA update complete");
+  });
+  ArduinoOTA.onError([](ota_error_t err) {
+    Serial.printf("OTA error: %d\n", err);
+  });
+  ArduinoOTA.begin();
+  Serial.println("OTA ready");
+}
+
 // ── PASSENGER COUNT ─────────────────────────────────────────
-const int THRESHOLD = 40; // cm — person crossing door frame
+const int THRESHOLD = 40;
 int passengers = 0;
 int state = 0;
-int pendingPassengers = -1; // -1 means no pending update
-int debounce = 0;          // consecutive stable readings counter
-unsigned long stateStart = 0; // when current state started (for timeout)
+int pendingPassengers = -1;
+int debounce = 0;
+unsigned long stateStart = 0;
 
 // ── TIMING ──────────────────────────────────────────────────
 unsigned long lastGpsSend = 0;
 unsigned long lastCountSend = 0;
-const unsigned long GPS_INTERVAL = 8000;  // send GPS every 8s
-const unsigned long COUNT_INTERVAL = 2000; // send count change within 2s
+const unsigned long GPS_INTERVAL = 8000;
+const unsigned long COUNT_INTERVAL = 2000;
 
 // ── SENSOR READING ──────────────────────────────────────────
 long readDistance(int trig, int echo) {
@@ -81,13 +268,23 @@ void parseLatLng(const String& latStr, const String& lngStr, char latDir, char l
   if (latStr.length() == 0 || lngStr.length() == 0) return;
   float lat = atof(latStr.c_str());
   int latDeg = int(lat / 100);
-  gpsLat = latDeg + (lat - latDeg * 100) / 60;
-  if (latDir == 'S') gpsLat = -gpsLat;
+  float parsedLat = latDeg + (lat - latDeg * 100) / 60;
+  if (latDir == 'S') parsedLat = -parsedLat;
 
   float lng = atof(lngStr.c_str());
   int lngDeg = int(lng / 100);
-  gpsLng = lngDeg + (lng - lngDeg * 100) / 60;
-  if (lngDir == 'W') gpsLng = -gpsLng;
+  float parsedLng = lngDeg + (lng - lngDeg * 100) / 60;
+  if (lngDir == 'W') parsedLng = -parsedLng;
+
+  if (validCoord(parsedLat, parsedLng)) {
+    addGpsSample(parsedLat, parsedLng);
+    float filteredLat, filteredLng;
+    getFilteredGps(filteredLat, filteredLng);
+    gpsLat = filteredLat;
+    gpsLng = filteredLng;
+    gpsFixed = true;
+    lastGpsFix = millis();
+  }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -115,10 +312,6 @@ void readGps() {
       }
       if (fix > 0) {
         parseLatLng(latStr, lngStr, latDir, lngDir);
-        if (validCoord(gpsLat, gpsLng)) {
-          gpsFixed = true;
-          lastGpsFix = millis();
-        }
       }
     }
 
@@ -140,10 +333,6 @@ void readGps() {
       }
       if (status == 'A') {
         parseLatLng(latStr, lngStr, latDir, lngDir);
-        if (validCoord(gpsLat, gpsLng)) {
-          gpsFixed = true;
-          lastGpsFix = millis();
-        }
       }
     }
 
@@ -191,10 +380,10 @@ int extractJsonInt(const String& json, const String& key) {
 void fetchConfig() {
   if (WiFi.status() != WL_CONNECTED) return;
 
-  String url = String(CONFIG_URL) + String(BUS_ID);
+  String url = String(CONFIG_URL) + String(busId);
   HTTPClient http;
   http.begin(url);
-  http.setTimeout(3000);
+  http.setTimeout(5000);
   int code = http.GET();
 
   if (code == 200) {
@@ -223,7 +412,7 @@ bool httpPost(const char* url, const String& body) {
   HTTPClient http;
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
-  http.setTimeout(3000);
+  http.setTimeout(5000);
 
   int code = http.POST(body);
   http.end();
@@ -232,9 +421,13 @@ bool httpPost(const char* url, const String& body) {
 }
 
 void sendLocation() {
-  String body = "{\"busId\":\"" + String(BUS_ID) + "\""
-    + ",\"lat\":" + String(gpsLat, 6)
-    + ",\"lng\":" + String(gpsLng, 6)
+  float sendLat = gpsLat, sendLng = gpsLng;
+  getFilteredGps(sendLat, sendLng);
+  if (!gpsFixed) { sendLat = gpsLat; sendLng = gpsLng; }
+
+  String body = "{\"busId\":\"" + String(busId) + "\""
+    + ",\"lat\":" + String(sendLat, 6)
+    + ",\"lng\":" + String(sendLng, 6)
     + ",\"speed\":" + String(gpsSpeed)
     + ",\"seats\":" + String(totalSeats - passengers)
     + ",\"inside\":" + String(passengers)
@@ -243,15 +436,13 @@ void sendLocation() {
     + "}";
 
   bool ok = httpPost(GPS_URL, body);
-
-  Serial.print("↑ ");
   if (ok) {
-    Serial.print("OK ");
+    Serial.print("↑ OK ");
   } else {
-    Serial.print("FAIL ");
+    Serial.print("↑ FAIL ");
   }
   if (gpsFixed) {
-    Serial.print(String(gpsLat, 4) + "," + String(gpsLng, 4));
+    Serial.print(String(sendLat, 4) + "," + String(sendLng, 4));
     Serial.print(" " + String(gpsSpeed) + "km/h");
   } else {
     Serial.print("GPS:searching...");
@@ -260,7 +451,7 @@ void sendLocation() {
 }
 
 void sendCount() {
-  String body = "{\"busId\":\"" + String(BUS_ID) + "\""
+  String body = "{\"busId\":\"" + String(busId) + "\""
     + ",\"inside\":" + String(passengers)
     + ",\"seats\":" + String(totalSeats - passengers)
     + "}";
@@ -280,26 +471,20 @@ void setup() {
   pinMode(ECHO_A, INPUT);
   pinMode(TRIG_B, OUTPUT);
   pinMode(ECHO_B, INPUT);
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW);
 
-  Serial.print("Connecting to WiFi...");
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  int tries = 0;
-  while (WiFi.status() != WL_CONNECTED && tries < 40) {
-    delay(500);
-    Serial.print(".");
-    tries++;
-  }
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nWiFi connected");
-    Serial.print("IP: "); Serial.println(WiFi.localIP());
-    fetchConfig();
-  } else {
-    Serial.println("\nWiFi failed!");
-  }
-
+  Serial.println("\n=== TN BusTrack v3 ===");
   Serial.print("Bus ID: ");
-  Serial.println(BUS_ID);
+  Serial.println(busId);
+
+  if (!connectWifi()) {
+    startConfigPortal();
+    return;
+  }
+
+  setupOTA();
+  fetchConfig();
   Serial.println("Ready.\n");
 }
 
@@ -307,7 +492,14 @@ void setup() {
 //  MAIN LOOP
 // ────────────────────────────────────────────────────────────
 void loop() {
+  if (configMode) {
+    portalServer.handleClient();
+    return;
+  }
+
   unsigned long now = millis();
+  ArduinoOTA.handle();
+  checkWiFi();
   readGps();
 
   long dA = readDistance(TRIG_A, ECHO_A);
@@ -333,7 +525,6 @@ void loop() {
     debounce = 0; state = 0;
   } else { debounce = 0; }
 
-  // Clear fix if stale (>30s since last valid GPS)
   if (gpsFixed && now - lastGpsFix > 30000) {
     gpsFixed = false;
     gpsLat = 0;
@@ -341,19 +532,16 @@ void loop() {
     Serial.println("GPS fix lost");
   }
 
-  // Send count update promptly when passengers change
   if (pendingPassengers >= 0 && (now - lastCountSend > COUNT_INTERVAL)) {
     lastCountSend = now;
     sendCount();
     pendingPassengers = -1;
   }
 
-  // Send GPS + count periodically
   if (now - lastGpsSend > GPS_INTERVAL) {
     lastGpsSend = now;
     sendLocation();
   }
 
-  // Fast loop — sensor responds immediately
   delay(5);
 }

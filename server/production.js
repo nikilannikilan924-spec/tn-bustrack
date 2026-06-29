@@ -9,7 +9,8 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const next = require('next');
 
-const DELETED_BUSES_FILE = path.join(__dirname, '..', 'deleted-buses.json');
+
+const CONFIG_FILE = path.join(__dirname, '..', 'data', 'configs.json');
 
 const dev = process.env.NODE_ENV !== 'production';
 const nextApp = next({ dev, dir: path.join(__dirname, '..') });
@@ -28,6 +29,35 @@ app.use(express.json());
 let busPositions = {};
 let busConfigs = {};
 let gpsHistory = {};
+let deletedBuses = new Set();
+
+// ── CONFIG PERSISTENCE ─────────────────────────────────────
+function ensureDataDir() {
+  const dir = path.dirname(CONFIG_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
+function loadConfigs() {
+  try {
+    if (fs.existsSync(CONFIG_FILE)) {
+      const data = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+      if (data.busConfigs) busConfigs = data.busConfigs;
+      if (data.deletedBuses && Array.isArray(data.deletedBuses)) {
+        data.deletedBuses.forEach(id => deletedBuses.add(id));
+      }
+      const count = Object.keys(busConfigs).length;
+      if (count > 0) console.log(`Loaded ${count} bus config(s) from file`);
+    }
+  } catch (e) { console.error('Failed to load configs:', e.message); }
+}
+
+function saveConfigs() {
+  try {
+    ensureDataDir();
+    const data = { busConfigs, deletedBuses: [...deletedBuses] };
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2));
+  } catch (e) { console.error('Failed to save configs:', e.message); }
+}
 
 // ── HELPERS ─────────────────────────────────────────────────
 function deg2rad(deg) { return deg * (Math.PI / 180); }
@@ -89,7 +119,7 @@ const STOPS = {};
 function getNearestStop(lat, lng, routeKey, customStops) {
   const stops = customStops || STOPS[routeKey];
   if (!stops || stops.length === 0) {
-    return { stop: { name: 'Unknown', lat, lng }, distKm: 0 };
+    return { stop: { name: '', lat, lng }, distKm: 0 };
   }
   let nearest = stops[0];
   let minDist = Infinity;
@@ -103,7 +133,7 @@ function getNearestStop(lat, lng, routeKey, customStops) {
 function getNextStops(currentStopName, routeKey, busLat, busLng, customStops) {
   const stops = customStops || STOPS[routeKey];
   if (!stops || stops.length === 0) return [];
-  if (currentStopName === 'Unknown') return [];
+  if (!currentStopName || currentStopName === 'Unknown') return [];
   const curIdx = stops.findIndex(s => s.name === currentStopName);
   if (curIdx === -1) return [];
   return stops.slice(curIdx + 1).map(stop => {
@@ -133,6 +163,10 @@ app.post('/api/buses/update', (req, res) => {
     speed = 0;
   }
 
+  if (!validCoord && !prev) {
+    return res.json({ ok: true, message: 'No GPS fix yet' });
+  }
+
   const cfg = busConfigs[busId] || {};
   const routeKey = cfg.routeKey || 'namakkal-salem';
   const customStops = cfg.stops;
@@ -154,8 +188,8 @@ app.post('/api/buses/update', (req, res) => {
     route: cfg.routeName || (route && route != 'Default' ? route : busId),
     busNumber: cfg.busNumber || busId,
     gpsFixed: gpsFixed || false,
-    currentStop: stop.name && stop.name != 'Unknown' ? stop.name : '',
-    area: prev?.area || (stop.name && stop.name != 'Unknown' ? stop.name : ''),
+    currentStop: stop.name || '',
+    area: prev?.area || stop.name || '',
     road: prev?.road || cfg.routeName || '',
     city: prev?.city || '',
     distFromStop: distKm.toFixed(2),
@@ -223,14 +257,15 @@ app.post('/api/config/save', (req, res) => {
   busConfigs[busId] = {
     busId,
     totalSeats: totalSeats || 42,
-    routeName: routeName || 'Unknown',
+    routeName: routeName || '',
     routeKey: routeKey || 'namakkal-salem',
-    driverName: driverName || 'Unknown',
+    driverName: driverName || '',
     busNumber: busNumber || busId,
     updatedAt: new Date().toISOString()
   };
 
   io.to(`bus-${busId}`).emit('configUpdate', busConfigs[busId]);
+  saveConfigs();
 
   console.log(`Config saved for ${busId}`);
   res.json({ ok: true, config: busConfigs[busId] });
@@ -239,7 +274,7 @@ app.post('/api/config/save', (req, res) => {
 // ── APP: GET BUS CONFIG ──────────────────────────────────────
 app.get('/api/config/:busId', (req, res) => {
   const cfg = busConfigs[req.params.busId];
-  res.json(cfg || { busId: req.params.busId, totalSeats: 42, routeName: 'Default', routeKey: 'namakkal-salem' });
+  res.json(cfg || { busId: req.params.busId, totalSeats: 42, routeName: '', routeKey: 'namakkal-salem' });
 });
 
 // ── STOPS ────────────────────────────────────────────────────
@@ -275,49 +310,34 @@ app.post('/api/bus/create', (req, res) => {
   busConfigs[busId] = {
     busId,
     totalSeats: bus.seatCapacity || 42,
-    routeName: bus.routeName || 'Default',
+    routeName: bus.routeName || '',
     routeKey,
-    driverName: 'Unknown',
+    driverName: '',
     busNumber: bus.number || busId,
     stops: bus.stops || [],
     updatedAt: new Date().toISOString()
   };
+  saveConfigs();
   res.status(201).json({ bus, config: busConfigs[busId] });
 });
 
-let deletedBuses = new Set();
-
-// Load deleted buses from file (survives restart, not deploy)
-try {
-  if (fs.existsSync(DELETED_BUSES_FILE)) {
-    const data = JSON.parse(fs.readFileSync(DELETED_BUSES_FILE, 'utf-8'));
-    deletedBuses = new Set(data);
-  }
-} catch (e) { console.error('Failed to load deleted buses from file:', e.message); }
-
-// Also load from env var (survives deploy — set DELETED_BUSES on Railway dashboard)
+// Load deleted buses from env var (survives deploy)
 if (process.env.DELETED_BUSES) {
   process.env.DELETED_BUSES.split(',').map(s => s.trim()).filter(Boolean).forEach(id => deletedBuses.add(id));
 }
 
 if (deletedBuses.size > 0) {
   console.log('Loaded deleted buses:', [...deletedBuses]);
-  saveDeletedBuses(); // sync file so it persists in container
-}
-
-function saveDeletedBuses() {
-  try {
-    fs.writeFileSync(DELETED_BUSES_FILE, JSON.stringify([...deletedBuses], null, 2));
-  } catch (e) { console.error('Failed to save deleted buses:', e.message); }
+  saveConfigs();
 }
 
 app.delete('/api/buses/:busId', (req, res) => {
   const busId = req.params.busId;
   deletedBuses.add(busId);
-  saveDeletedBuses();
   delete busPositions[busId];
   delete busConfigs[busId];
   delete gpsHistory[busId];
+  saveConfigs();
   io.to('all-buses').emit('busRemoved', busId);
   res.json({ ok: true, removed: busId });
 });
@@ -352,7 +372,7 @@ app.post('/api/bus/location', (req, res) => {
     route: cfg.routeName || busId,
     busNumber: cfg.busNumber || busId,
     gpsFixed: true,
-    currentStop: stop.name,
+    currentStop: stop.name || '',
     distFromStop: distKm.toFixed(2),
     nextStops,
     lastUpdate: new Date().toISOString(),
@@ -393,7 +413,7 @@ app.get('/api/device/config', (req, res) => {
     },
     route: {
       id: 'route-1',
-      origin: cfg.routeName || 'Unknown',
+      origin: cfg.routeName || '',
       destination: '',
       stops: []
     }
@@ -457,21 +477,22 @@ app.get('/health', (req, res) => {
 
 
 
-// ── STALE BUS CLEANUP (every 5s, remove buses offline >12s) ─
+// ── STALE BUS CLEANUP (every 10s, remove buses offline >30s) ─
+// 30s allows 3+ missed ESP32 updates (interval=8s) + WiFi reconnect time
 setInterval(() => {
   const now = Date.now();
   Object.keys(busPositions).forEach((busId) => {
     const bus = busPositions[busId];
     if (!bus || !bus.lastUpdate) return;
     const age = now - new Date(bus.lastUpdate).getTime();
-    if (age > 12000) {
+    if (age > 30000) {
       console.log(`Removing stale bus ${busId} (offline ${Math.round(age / 1000)}s)`);
       delete busPositions[busId];
       delete gpsHistory[busId];
       io.to('all-buses').emit('busRemoved', busId);
     }
   });
-}, 5000);
+}, 10000);
 
 // ── SOCKET.IO ────────────────────────────────────────────────
 io.on('connection', (socket) => {
@@ -501,6 +522,7 @@ app.all('*', (req, res) => handle(req, res));
 const PORT = Number(process.env.PORT || 3000);
 
 nextApp.prepare().then(() => {
+  loadConfigs();
   server.listen(PORT, () => {
     console.log(`TN BusTrack production server running on http://localhost:${PORT}`);
   });

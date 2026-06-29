@@ -17,6 +17,15 @@ interface ConfiguredBus {
   busNumber: string;
 }
 
+interface LiveBusPos {
+  busId: string;
+  lat: number;
+  lng: number;
+  speed: number;
+  gpsFixed: boolean;
+  lastUpdate: string;
+}
+
 export default function SetupPage() {
   const { t, lang } = useLanguage();
 
@@ -32,8 +41,25 @@ export default function SetupPage() {
   const [message, setMessage] = useState('');
   const [savedBusId, setSavedBusId] = useState('');
   const [configuredBuses, setConfiguredBuses] = useState<ConfiguredBus[]>([]);
+  const [liveBuses, setLiveBuses] = useState<LiveBusPos[]>([]);
 
   useEffect(() => { fetchConfiguredBuses(); }, []);
+
+  useEffect(() => {
+    fetchLiveBuses();
+    const interval = setInterval(fetchLiveBuses, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  async function fetchLiveBuses() {
+    try {
+      const res = await fetch('/api/buses');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setLiveBuses(data);
+      }
+    } catch (_) {}
+  }
 
   async function fetchConfiguredBuses() {
     try {
@@ -187,6 +213,69 @@ export default function SetupPage() {
         <h1 className="text-2xl font-bold text-[var(--text-primary)]">{getVal('setup.title')}</h1>
         <p className="mt-2 text-sm text-[var(--text-secondary)]">{getVal('setup.subtitle')}</p>
       </div>
+
+      {liveBuses.length > 0 && (
+        <div className="rounded-3xl border border-[#22C55E]/30 bg-[#22C55E]/5 p-6 shadow-lg backdrop-blur-xl sm:p-8">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#22C55E]/20">
+              <span className="h-3 w-3 rounded-full bg-[#22C55E] shadow-[0_0_12px_rgba(34,197,94,0.6)] animate-pulse" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-[var(--text-primary)]">
+                {lang === 'ta' ? 'நேரலையில் பேருந்து இருப்பிடம்' : 'Live Bus Position'}
+              </p>
+              <p className="text-[10px] text-[var(--text-secondary)]">
+                {lang === 'ta' ? 'GPS இலிருந்து நிஜ நேர தரவு' : 'Real-time data from GPS'}
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {liveBuses.map((bus) => (
+              <div key={bus.busId} className="rounded-xl border border-[var(--border)] bg-white/60 p-3">
+                <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{bus.busId}</p>
+                <div className="mt-2 space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-[var(--text-muted)]">Lat</span>
+                    <span className="font-jetbrains font-medium">{bus.lat.toFixed(6)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-[var(--text-muted)]">Lng</span>
+                    <span className="font-jetbrains font-medium">{bus.lng.toFixed(6)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-[var(--text-muted)]">Speed</span>
+                    <span className="font-jetbrains font-medium">{bus.speed} km/h</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-[var(--text-muted)]">GPS</span>
+                    <span className={`font-jetbrains font-medium ${bus.gpsFixed ? 'text-[#22C55E]' : 'text-[#F59E0B]'}`}>
+                      {bus.gpsFixed ? (lang === 'ta' ? 'சரி' : 'FIX') : (lang === 'ta' ? 'தேடுகிறது' : 'SEARCHING')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {liveBuses.length === 0 && (
+        <div className="rounded-3xl border border-dashed border-[var(--border-subtle)] bg-white/50 p-6 shadow-lg backdrop-blur-xl sm:p-8">
+          <div className="flex items-center gap-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--overlay-hover)]">
+              <span className="h-3 w-3 rounded-full bg-[var(--text-muted)]" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-[var(--text-secondary)]">
+                {lang === 'ta' ? 'பேருந்து இணைக்கப்படவில்லை' : 'No Bus Connected'}
+              </p>
+              <p className="text-[10px] text-[var(--text-muted)]">
+                {lang === 'ta' ? 'GPS சரிசெய்தலுக்காக காத்திருக்கிறது...' : 'Waiting for GPS fix...'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-3xl bg-white/80 p-6 shadow-lg backdrop-blur-xl sm:p-8">
         <div className="grid gap-4 sm:grid-cols-2">

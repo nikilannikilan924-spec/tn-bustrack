@@ -29,6 +29,18 @@ export function subscribeBusLocationUpdate(callback: (payload: any) => void) {
   };
 }
 
+export function subscribeCurrentBuses(callback: (buses: any[]) => void) {
+  const client = getSocket();
+  client?.on('currentBuses', callback);
+  return () => { client?.off('currentBuses', callback); };
+}
+
+export function subscribeSingleBusUpdate(callback: (bus: any) => void) {
+  const client = getSocket();
+  client?.on('busUpdate', callback);
+  return () => { client?.off('busUpdate', callback); };
+}
+
 export function subscribeBusRemoved(callback: (busId: string) => void) {
   const client = getSocket();
   client?.on('busRemoved', callback);

@@ -132,6 +132,28 @@ export default function BusDetailPage({ params }: BusPageProps) {
             </div>
             <span className="font-jetbrains text-[10px] text-[var(--text-muted)]">{crowdedPct}% full</span>
           </div>
+          {(bus.area || bus.road || bus.city) && (
+            <div className="mt-3 space-y-1 border-t border-[var(--border)] pt-3">
+              {bus.area && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-[var(--text-muted)]">Area</span>
+                  <span className="font-medium text-[var(--text-primary)]">{bus.area}</span>
+                </div>
+              )}
+              {bus.road && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-[var(--text-muted)]">Road</span>
+                  <span className="font-medium text-[var(--text-primary)]">{bus.road}</span>
+                </div>
+              )}
+              {bus.city && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-[var(--text-muted)]">City</span>
+                  <span className="font-medium text-[var(--text-primary)]">{bus.city}</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

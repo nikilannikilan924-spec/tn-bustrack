@@ -23,8 +23,8 @@ interface LiveBus {
 function normalize(raw: any): LiveBus {
   return {
     id: raw.busId || raw.id,
-    number: raw.busNumber || raw.number || raw.busId || 'Unknown',
-    routeName: raw.route || raw.routeName || 'Unknown',
+    number: raw.busNumber || raw.number || raw.busId || '',
+    routeName: raw.route || raw.routeName || '',
     currentStop: raw.currentStop || '',
     status: raw.status || (raw.speed > 0 ? 'running' : 'stopped'),
     speed: raw.speed || 0,

@@ -35,6 +35,9 @@ export interface Bus {
   seatsAvailable: number;
   etaMinutes: number;
   currentStop: string;
+  area: string;
+  road: string;
+  city: string;
   latitude: number;
   longitude: number;
   pathIndex: number;
@@ -72,12 +75,12 @@ export function normalizeAPIBus(raw: any, allStops: Stop[]): Bus {
 
   const route: Route = {
     id: raw.routeId || busId || '',
-    number: raw.routeNumber || busNumber.split(' ').pop() || 'N/A',
+    number: raw.routeNumber || busNumber.split(' ').pop() || busNumber,
     name: routeName,
     operator: 'TNSTC',
     busType: 'Normal',
-    origin: raw.currentStop || routeName || 'Unknown',
-    destination: stopsWithRouteKey.length > 0 ? stopsWithRouteKey[stopsWithRouteKey.length - 1].name : 'Unknown',
+    origin: raw.currentStop || routeName || '',
+    destination: stopsWithRouteKey.length > 0 ? stopsWithRouteKey[stopsWithRouteKey.length - 1].name : '',
     status: status,
     stops: stopsWithRouteKey,
   };
@@ -94,6 +97,9 @@ export function normalizeAPIBus(raw: any, allStops: Stop[]): Bus {
     seatsAvailable,
     etaMinutes: raw.nextStops?.[0]?.etaMin ?? 0,
     currentStop: raw.currentStop || '',
+    area: raw.area || '',
+    road: raw.road || '',
+    city: raw.city || '',
     latitude: raw.lat ?? raw.latitude ?? 0,
     longitude: raw.lng ?? raw.longitude ?? 0,
     pathIndex: 0,
