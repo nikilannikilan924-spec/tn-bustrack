@@ -163,13 +163,20 @@ app.post('/api/buses/update', (req, res) => {
     speed = 0;
   }
 
-  if (!validCoord && !prev) {
-    return res.json({ ok: true, message: 'No GPS fix yet' });
-  }
-
   const cfg = busConfigs[busId] || {};
   const routeKey = cfg.routeKey || 'namakkal-salem';
   const customStops = cfg.stops;
+
+  if (!validCoord && !prev) {
+    if (customStops && customStops.length > 0) {
+      lat = customStops[0].lat;
+      lng = customStops[0].lng;
+      gpsFixed = false;
+    } else {
+      return res.json({ ok: true, message: 'No GPS fix yet' });
+    }
+  }
+
   const { stop, distKm } = getNearestStop(lat, lng, routeKey, customStops);
   const nextStops = getNextStops(stop.name, routeKey, lat, lng, customStops);
 
