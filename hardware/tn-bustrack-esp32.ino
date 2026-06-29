@@ -12,6 +12,10 @@
 
 // ── CONFIG (can be changed via WiFi portal) ────────────────
 String busId = "M31";
+
+// ── FALLBACK WIFI (used if no credentials saved in portal) ─
+const char* FALLBACK_SSID = "SSID";
+const char* FALLBACK_PASS = "Nikilan31";
 // ────────────────────────────────────────────────────────────
 
 // ── SERVER URLs ─────────────────────────────────────────────
@@ -165,18 +169,12 @@ unsigned long lastWifiCheck = 0;
 const unsigned long WIFI_CHECK_INTERVAL = 5000;
 bool wifiReconnecting = false;
 
-bool connectWifi() {
-  String ssid, pass, id;
-  if (!loadWifiCreds(ssid, pass, id)) {
-    Serial.println("No WiFi credentials saved");
-    return false;
-  }
-  if (id.length() > 0) busId = id;
+bool tryConnect(const char* ssid, const char* pass) {
   Serial.print("Connecting to ");
   Serial.print(ssid);
   Serial.print("...");
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid.c_str(), pass.c_str());
+  WiFi.begin(ssid, pass);
   WiFi.setAutoReconnect(true);
   int tries = 0;
   while (WiFi.status() != WL_CONNECTED && tries < 40) {
@@ -191,7 +189,24 @@ bool connectWifi() {
     digitalWrite(LED_BUILTIN, HIGH);
     return true;
   }
-  Serial.println("\nWiFi failed!");
+  return false;
+}
+
+bool connectWifi() {
+  String ssid, pass, id;
+  if (loadWifiCreds(ssid, pass, id)) {
+    if (id.length() > 0) busId = id;
+    if (tryConnect(ssid.c_str(), pass.c_str())) return true;
+    Serial.println("Saved WiFi failed");
+  } else {
+    Serial.println("No saved WiFi credentials");
+  }
+  // Try fallback hotspot
+  if (strlen(FALLBACK_SSID) > 0 && strcmp(FALLBACK_SSID, "YOUR_HOTSPOT_NAME") != 0) {
+    Serial.println("Trying fallback hotspot...");
+    if (tryConnect(FALLBACK_SSID, FALLBACK_PASS)) return true;
+  }
+  Serial.println("\nAll WiFi attempts failed!");
   return false;
 }
 
@@ -395,10 +410,14 @@ void fetchConfig() {
 
     Serial.print("Config loaded — Seats: ");
     Serial.print(totalSeats);
-    Serial.print("  Route: ");
-    Serial.println(routeName);
+    if (routeName.length() > 0) {
+      Serial.print("  Route: ");
+      Serial.println(routeName);
+    } else {
+      Serial.println("  Route: (configure at /setup)");
+    }
   } else {
-    Serial.println("Config not found, using defaults");
+    Serial.println("Config not found — create bus at /setup on Railway");
   }
   http.end();
 }

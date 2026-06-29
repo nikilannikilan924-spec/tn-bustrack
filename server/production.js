@@ -185,7 +185,7 @@ app.post('/api/buses/update', (req, res) => {
     speed: speed || 0,
     seats: totalSeats - pInside,
     inside: pInside,
-    route: cfg.routeName || (route && route != 'Default' ? route : busId),
+    route: cfg.routeName || route || busId,
     busNumber: cfg.busNumber || busId,
     gpsFixed: gpsFixed || false,
     currentStop: stop.name || '',
