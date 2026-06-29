@@ -572,7 +572,7 @@ void loop() {
     gpsFixed = false;
     gpsLat = 0;
     gpsLng = 0;
-    Serial.println("GPS fix lost");
+    Serial.println("GPS: fix lost");
   }
 
   if (pendingPassengers >= 0 && (now - lastCountSend > COUNT_INTERVAL)) {

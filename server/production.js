@@ -314,6 +314,7 @@ app.post('/api/bus/create', (req, res) => {
   memoryBuses.push(bus);
   const busId = bus.busId || bus.number || bus.id;
   const routeKey = busId;
+  deletedBuses.delete(busId);
   busConfigs[busId] = {
     busId,
     totalSeats: bus.seatCapacity || 42,
