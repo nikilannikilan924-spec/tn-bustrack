@@ -305,9 +305,14 @@ void parseLatLng(const String& latStr, const String& lngStr, char latDir, char l
 // ────────────────────────────────────────────────────────────
 //  READ GPS (raw NMEA parsing, no library needed)
 // ────────────────────────────────────────────────────────────
+unsigned long lastGpsData = 0;
+unsigned long lastGpsDebug = 0;
+
 void readGps() {
+  if (gps.available()) lastGpsData = millis();
   while (gps.available()) {
     String line = gps.readStringUntil('\n');
+    if (line.length() > 0 && line[0] != '$') { Serial.println(line); continue; }
 
     if (line.startsWith("$GPGGA") || line.startsWith("$GNGGA")) {
       char buf[80];
@@ -520,6 +525,25 @@ void loop() {
   ArduinoOTA.handle();
   checkWiFi();
   readGps();
+
+  if (!gpsFixed && now - lastGpsDebug > 5000) {
+    lastGpsDebug = now;
+    unsigned long gpsAge = now - lastGpsData;
+    if (lastGpsData > 0 && gpsAge < 3000) {
+      Serial.print("GPS: data received, no 3D fix yet — searching for satellites (cold start can take 30-60s)");
+      if (gpsLat != 0 || gpsLng != 0) {
+        Serial.print(" — last valid: ");
+        Serial.print(gpsLat, 4); Serial.print(","); Serial.println(gpsLng, 4);
+      } else {
+        Serial.println();
+      }
+    } else if (lastGpsData > 0) {
+      Serial.print("GPS: no data for "); Serial.print(gpsAge / 1000);
+      Serial.println("s — check antenna connection");
+    } else {
+      Serial.println("GPS: NO DATA at all — check baud rate (should be 115200) and wiring (GPS TX→ESP32 pin16, GPS RX→ESP32 pin17)");
+    }
+  }
 
   long dA = readDistance(TRIG_A, ECHO_A);
   long dB = readDistance(TRIG_B, ECHO_B);
