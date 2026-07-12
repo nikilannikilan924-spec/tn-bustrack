@@ -58,7 +58,7 @@ function makePopupHtml(bus: LiveBus): string {
     <div style="font-size:11px;color:#64748b;margin-bottom:6px">${bus.routeName}</div>
     <table style="font-size:12px;width:100%">
       <tr><td style="color:#64748b;padding:2px 0">Speed</td><td style="font-weight:600;text-align:right;padding:2px 0">${bus.speed} km/h</td></tr>
-      <tr><td style="color:#64748b;padding:2px 0">Location</td><td style="font-weight:600;text-align:right;padding:2px 0;color:#0EA5E9">${gpsLocation || bus.currentStop || bus.latitude.toFixed(4) + ', ' + bus.longitude.toFixed(4)}</td></tr>
+      <tr><td style="color:#64748b;padding:2px 0">Location</td><td style="font-weight:600;text-align:right;padding:2px 0;color:#0EA5E9">${gpsLocation || bus.latitude.toFixed(4) + ', ' + bus.longitude.toFixed(4)}</td></tr>
       <tr><td style="color:#64748b;padding:2px 0">Next Stop</td><td style="font-weight:600;text-align:right;padding:2px 0">${bus.nextStops[0] ? bus.nextStops[0].name + ' ' + bus.nextStops[0].etaMin + 'min' : '—'}</td></tr>
       <tr><td style="color:#64748b;padding:2px 0">Passengers</td><td style="font-weight:600;text-align:right;padding:2px 0">${passengersInside} / ${bus.seatCapacity}</td></tr>
       <tr><td style="color:#64748b;padding:2px 0">GPS</td><td style="font-weight:600;text-align:right;padding:2px 0;font-size:10px">${bus.gpsFixed === true ? '<span style="color:#22C55E">FIX</span>' : '<span style="color:#F59E0B">SEARCHING</span>'}</td></tr>

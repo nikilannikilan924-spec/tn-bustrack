@@ -197,8 +197,8 @@ app.post('/api/buses/update', (req, res) => {
     busNumber: cfg.busNumber || busId,
     gpsFixed: gpsFixed || false,
     currentStop: stop.name || '',
-    area: prev?.area || stop.name || '',
-    road: prev?.road || cfg.routeName || '',
+    area: prev?.area || '',
+    road: prev?.road || '',
     city: prev?.city || '',
     distFromStop: distKm.toFixed(2),
     nextStops,
@@ -216,7 +216,7 @@ app.post('/api/buses/update', (req, res) => {
 
   res.json({ ok: true });
 
-  if (gpsFixed && validCoord) {
+  if (validCoord) {
     reverseGeocode(Number(lat), Number(lng), busId);
   }
 });
