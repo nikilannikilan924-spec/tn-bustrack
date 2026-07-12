@@ -15,7 +15,7 @@ export default function NearbyPage() {
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [radius, setRadius] = useState(5);
+  const [radius, setRadius] = useState(50);
 
   useEffect(() => {
     let doneStops = false;
@@ -173,6 +173,10 @@ export default function NearbyPage() {
                 <p className="font-jetbrains text-[10px] text-[var(--text-muted)]">
                   {location.lat.toFixed(4)}, {location.lng.toFixed(4)}
                 </p>
+                <p className="font-jetbrains text-[9px] text-[var(--text-muted)]">
+                  {buses.length} bus{buses.length !== 1 ? 'es' : ''} in system
+                  {nearbyBuses.length > 0 && ` · ${nearbyBuses.length} within ${radius}km`}
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -185,12 +189,12 @@ export default function NearbyPage() {
                   onChange={(e) => setRadius(Number(e.target.value))}
                   className="rounded-xl border border-[var(--border)] bg-white/80 px-3 py-2 text-sm font-medium text-[var(--text-primary)]"
                 >
-                  <option value={0.5}>0.5 km</option>
                   <option value={1}>1 km</option>
-                  <option value={1.5}>1.5 km</option>
-                  <option value={2}>2 km</option>
-                  <option value={3}>3 km</option>
                   <option value={5}>5 km</option>
+                  <option value={10}>10 km</option>
+                  <option value={25}>25 km</option>
+                  <option value={50}>50 km</option>
+                  <option value={100}>100 km</option>
                 </select>
               </div>
               <button
