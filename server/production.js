@@ -50,7 +50,36 @@ function loadConfigs() {
         console.log(`Restored ${Object.keys(data.busPositions).length} bus position(s) from file`);
       }
       const count = Object.keys(busConfigs).length;
-      Object.keys(busConfigs).forEach(id => deletedBuses.delete(id));
+      Object.keys(busConfigs).forEach(id => {
+        deletedBuses.delete(id);
+        // Create virtual position for any configured bus without live data
+        if (!busPositions[id]) {
+          const cfg = busConfigs[id];
+          const stops = cfg.stops || [];
+          const firstStop = stops.length > 0 ? stops[0] : null;
+          busPositions[id] = {
+            busId: id,
+            routeId: cfg.routeKey || id,
+            totalSeats: cfg.totalSeats || 42,
+            lat: firstStop ? firstStop.lat : 11.3,
+            lng: firstStop ? firstStop.lng : 78.1,
+            speed: 0,
+            seats: cfg.totalSeats || 42,
+            inside: 0,
+            route: cfg.routeName || id,
+            busNumber: cfg.busNumber || id,
+            gpsFixed: false,
+            currentStop: firstStop ? firstStop.name : '',
+            area: firstStop ? firstStop.name : '',
+            road: cfg.routeName || '',
+            city: '',
+            distFromStop: '0.00',
+            nextStops: [],
+            lastUpdate: new Date().toISOString(),
+          };
+        }
+      });
+      console.log(`Total bus positions: ${Object.keys(busPositions).length}`);
       if (count > 0) console.log(`Loaded ${count} bus config(s) from file`);
     }
   } catch (e) { console.error('Failed to load configs:', e.message); }
