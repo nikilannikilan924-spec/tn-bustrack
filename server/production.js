@@ -486,22 +486,22 @@ app.get('/health', (req, res) => {
 
 
 
-// ── STALE BUS CLEANUP (every 10s, remove buses offline >30s) ─
-// 30s allows 3+ missed ESP32 updates (interval=8s) + WiFi reconnect time
+// ── STALE BUS CLEANUP (every 15s, remove buses offline >120s) ─
+// 120s allows ESP32 brownout reboot + WiFi reconnect time
 setInterval(() => {
   const now = Date.now();
   Object.keys(busPositions).forEach((busId) => {
     const bus = busPositions[busId];
     if (!bus || !bus.lastUpdate) return;
     const age = now - new Date(bus.lastUpdate).getTime();
-    if (age > 30000) {
+    if (age > 120000) {
       console.log(`Removing stale bus ${busId} (offline ${Math.round(age / 1000)}s)`);
       delete busPositions[busId];
       delete gpsHistory[busId];
       io.to('all-buses').emit('busRemoved', busId);
     }
   });
-}, 10000);
+}, 15000);
 
 // ── SOCKET.IO ────────────────────────────────────────────────
 io.on('connection', (socket) => {

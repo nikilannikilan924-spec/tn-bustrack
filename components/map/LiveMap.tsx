@@ -121,19 +121,25 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
           if (anims.has(bus.id)) cancelAnimationFrame(anims.get(bus.id)!);
           const cur = marker.getLatLng();
           if (cur.lat !== bus.latitude || cur.lng !== bus.longitude) {
-            const startLat = cur.lat, startLng = cur.lng;
-            const endLat = bus.latitude, endLng = bus.longitude;
-            const startTime = performance.now();
-            const duration = 1500;
-            function animate(time: number) {
-              const t = Math.min((time - startTime) / duration, 1);
-              const lat = startLat + (endLat - startLat) * t;
-              const lng = startLng + (endLng - startLng) * t;
-              marker.setLatLng([lat, lng]);
-              if (t < 1) anims.set(bus.id, requestAnimationFrame(animate));
-              else anims.delete(bus.id);
+            const dLat = bus.latitude - cur.lat;
+            const dLng = bus.longitude - cur.lng;
+            if (Math.abs(dLat) < 0.0002 && Math.abs(dLng) < 0.0002) {
+              marker.setLatLng([bus.latitude, bus.longitude]);
+            } else {
+              const startLat = cur.lat, startLng = cur.lng;
+              const endLat = bus.latitude, endLng = bus.longitude;
+              const startTime = performance.now();
+              const duration = 1500;
+              function animate(time: number) {
+                const t = Math.min((time - startTime) / duration, 1);
+                const lat = startLat + (endLat - startLat) * t;
+                const lng = startLng + (endLng - startLng) * t;
+                marker.setLatLng([lat, lng]);
+                if (t < 1) anims.set(bus.id, requestAnimationFrame(animate));
+                else anims.delete(bus.id);
+              }
+              anims.set(bus.id, requestAnimationFrame(animate));
             }
-            anims.set(bus.id, requestAnimationFrame(animate));
           }
           marker.setIcon(makeBusIcon(bus, 14));
           if (marker.getPopup()) {
