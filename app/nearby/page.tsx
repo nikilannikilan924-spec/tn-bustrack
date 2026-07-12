@@ -207,10 +207,37 @@ export default function NearbyPage() {
             </div>
           </div>
 
-          {nearbyBuses.length > 0 && (
+          {buses.length > 0 && (
             <div className="rounded-3xl border border-[var(--border)] bg-white/80 p-5 shadow-lg backdrop-blur">
               <h2 className="font-orbitron text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-secondary)]">
-                Nearby Buses
+                All Buses
+              </h2>
+              <div className="mt-3 space-y-2">
+                {buses.map((bus) => {
+                  const dist = haversineKm(location.lat, location.lng, bus.latitude, bus.longitude);
+                  return (
+                    <div key={bus.id} className="flex items-center justify-between rounded-xl bg-[var(--overlay-subtle)] px-4 py-3">
+                      <div>
+                        <p className="text-sm font-semibold text-[var(--text-primary)]">{bus.number}</p>
+                        <p className="font-jetbrains text-[10px] text-[var(--text-muted)]">
+                          {formatKm(dist)} away · {bus.latitude.toFixed(4)}, {bus.longitude.toFixed(4)}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-jetbrains text-sm font-bold text-[var(--text-primary)]">{bus.speed} km/h</p>
+                        <p className="text-[10px] text-[var(--text-muted)]">{bus.passengersInside}/{bus.seatCapacity}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {nearbyBuses.length > 0 && nearbyBuses.length < buses.length && (
+            <div className="rounded-3xl border border-[var(--border)] bg-white/80 p-5 shadow-lg backdrop-blur">
+              <h2 className="font-orbitron text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-secondary)]">
+                Within {radius}km
               </h2>
               <div className="mt-3 space-y-2">
                 {nearbyBuses.map(({ bus, distKm }) => (
