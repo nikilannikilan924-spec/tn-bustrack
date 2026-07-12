@@ -18,9 +18,9 @@ const char* FALLBACK_SSID = "SSID";
 const char* FALLBACK_PASS = "Nikilan31";
 
 // ── SERVER URLs ─────────────────────────────────────────────
-const char* GPS_URL    = "https://tn-bustrack-production.up.railway.app/api/buses/update";
-const char* COUNT_URL  = "https://tn-bustrack-production.up.railway.app/api/buses/count";
-const char* CONFIG_URL = "https://tn-bustrack-production.up.railway.app/api/config/";
+const char* GPS_URL    = "https://tn-bustrack-production-c340.up.railway.app/api/buses/update";
+const char* COUNT_URL  = "https://tn-bustrack-production-c340.up.railway.app/api/buses/count";
+const char* CONFIG_URL = "https://tn-bustrack-production-c340.up.railway.app/api/config/";
 
 // ── PIN DEFINITIONS ─────────────────────────────────────────
 #define GPS_RX 16
@@ -442,6 +442,7 @@ void sendCount() {
 void setup() {
   Serial.begin(115200);
   gps.begin(115200, SERIAL_8N1, GPS_RX, GPS_TX);
+  Serial.println("GPS: 115200 baud (configured in u-center)");
   pinMode(TRIG_A, OUTPUT);
   pinMode(ECHO_A, INPUT);
   pinMode(TRIG_B, OUTPUT);

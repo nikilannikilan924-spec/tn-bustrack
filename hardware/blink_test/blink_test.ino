@@ -3,18 +3,12 @@
 #include <Preferences.h>
 #include <HTTPClient.h>
 #include <ArduinoOTA.h>
-// ── CONFIG (can be changed via WiFi portal) ────────────────
 String busId = "M31";
-// ── FALLBACK WIFI (used if no credentials saved in portal) ─
 const char* FALLBACK_SSID = "SSID";
 const char* FALLBACK_PASS = "Nikilan31";
-// ────────────────────────────────────────────────────────────
-// ── SERVER URLs ─────────────────────────────────────────────
-const char* GPS_URL    = "https://tn-bustrack-production.up.railway.app/api/buses/update";
-const char* COUNT_URL  = "https://tn-bustrack-production.up.railway.app/api/buses/count";
-const char* CONFIG_URL = "https://tn-bustrack-production.up.railway.app/api/config/";
-// ────────────────────────────────────────────────────────────
-// ── PIN DEFINITIONS ─────────────────────────────────────────
+const char* GPS_URL    = "https://tn-bustrack-production-c340.up.railway.app/api/buses/update";
+const char* COUNT_URL  = "https://tn-bustrack-production-c340.up.railway.app/api/buses/count";
+const char* CONFIG_URL = "https://tn-bustrack-production-c340.up.railway.app/api/config/";
 #define GPS_RX 16
 #define GPS_TX 17
 #define TRIG_A 12
@@ -22,17 +16,13 @@ const char* CONFIG_URL = "https://tn-bustrack-production.up.railway.app/api/conf
 #define TRIG_B 27
 #define ECHO_B 15
 #define LED_BUILTIN 2
-// ────────────────────────────────────────────────────────────
-// ── BUS CONFIG ──────────────────────────────────────────────
 int totalSeats = 42;
 String routeName = "";
-// ── GPS ─────────────────────────────────────────────────────
 float gpsLat = 0, gpsLng = 0;
 int gpsSpeed = 0;
 unsigned long lastGpsFix = 0;
 bool gpsFixed = false;
 HardwareSerial gps(2);
-// GPS moving average filter (5 samples)
 #define GPS_FILTER_SIZE 5
 float latHistory[GPS_FILTER_SIZE] = {0};
 float lngHistory[GPS_FILTER_SIZE] = {0};
@@ -60,7 +50,6 @@ void getFilteredGps(float& outLat, float& outLng) {
 bool validCoord(float lat, float lng) {
   return lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 && !(lat == 0 && lng == 0);
 }
-// ── WIFI CONFIG PORTAL ─────────────────────────────────────
 Preferences prefs;
 WebServer portalServer(80);
 bool configMode = false;
@@ -140,7 +129,6 @@ void startConfigPortal() {
   Serial.println("====================");
   digitalWrite(LED_BUILTIN, LOW);
 }
-// ── WIFI CONNECTION ─────────────────────────────────────────
 unsigned long lastWifiCheck = 0;
 const unsigned long WIFI_CHECK_INTERVAL = 5000;
 bool wifiReconnecting = false;
@@ -149,6 +137,7 @@ bool tryConnect(const char* ssid, const char* pass) {
   Serial.print(ssid);
   Serial.print("...");
   WiFi.mode(WIFI_STA);
+  WiFi.setTxPower(WIFI_POWER_11dBm);
   WiFi.begin(ssid, pass);
   WiFi.setAutoReconnect(true);
   int tries = 0;
@@ -175,7 +164,6 @@ bool connectWifi() {
   } else {
     Serial.println("No saved WiFi credentials");
   }
-  // Try fallback hotspot
   if (strlen(FALLBACK_SSID) > 0 && strcmp(FALLBACK_SSID, "YOUR_HOTSPOT_NAME") != 0) {
     Serial.println("Trying fallback hotspot...");
     if (tryConnect(FALLBACK_SSID, FALLBACK_PASS)) return true;
@@ -202,33 +190,23 @@ void checkWiFi() {
   WiFi.reconnect();
   Serial.print(".");
 }
-// ── OTA UPDATE ──────────────────────────────────────────────
 void setupOTA() {
-  ArduinoOTA.onStart([]() {
-    Serial.println("OTA update started");
-  });
-  ArduinoOTA.onEnd([]() {
-    Serial.println("\nOTA update complete");
-  });
-  ArduinoOTA.onError([](ota_error_t err) {
-    Serial.printf("OTA error: %d\n", err);
-  });
+  ArduinoOTA.onStart([]() { Serial.println("OTA update started"); });
+  ArduinoOTA.onEnd([]() { Serial.println("\nOTA update complete"); });
+  ArduinoOTA.onError([](ota_error_t err) { Serial.printf("OTA error: %d\n", err); });
   ArduinoOTA.begin();
   Serial.println("OTA ready");
 }
-// ── PASSENGER COUNT ─────────────────────────────────────────
 const int THRESHOLD = 40;
 int passengers = 0;
 int state = 0;
 int pendingPassengers = -1;
 int debounce = 0;
 unsigned long stateStart = 0;
-// ── TIMING ──────────────────────────────────────────────────
 unsigned long lastGpsSend = 0;
 unsigned long lastCountSend = 0;
 const unsigned long GPS_INTERVAL = 8000;
 const unsigned long COUNT_INTERVAL = 2000;
-// ── SENSOR READING ──────────────────────────────────────────
 long readDistance(int trig, int echo) {
   digitalWrite(trig, LOW); delayMicroseconds(2);
   digitalWrite(trig, HIGH); delayMicroseconds(10);
@@ -242,9 +220,6 @@ long readDistance(int trig, int echo) {
   long d = ((micros() - t) * 0.034) / 2;
   return d > 500 ? 999 : d;
 }
-// ────────────────────────────────────────────────────────────
-//  PARSE NMEA LAT/LNG
-// ────────────────────────────────────────────────────────────
 void parseLatLng(const String& latStr, const String& lngStr, char latDir, char lngDir) {
   if (latStr.length() == 0 || lngStr.length() == 0) return;
   float lat = atof(latStr.c_str());
@@ -265,17 +240,16 @@ void parseLatLng(const String& latStr, const String& lngStr, char latDir, char l
     lastGpsFix = millis();
   }
 }
-// ────────────────────────────────────────────────────────────
-//  READ GPS (raw NMEA parsing, no library needed)
-// ────────────────────────────────────────────────────────────
+unsigned long lastGpsData = 0;
+unsigned long lastGpsDebug = 0;
 void readGps() {
+  if (gps.available()) lastGpsData = millis();
   while (gps.available()) {
     String line = gps.readStringUntil('\n');
+    if (line.length() > 0 && line[0] != '$') { Serial.println(line); continue; }
     if (line.startsWith("$GPGGA") || line.startsWith("$GNGGA")) {
-      char buf[80];
-      line.toCharArray(buf, 80);
-      char* ptr = buf;
-      int field = 0;
+      char buf[80]; line.toCharArray(buf, 80);
+      char* ptr = buf; int field = 0;
       char latStr[16] = "", lngStr[16] = "", latDir = 'N', lngDir = 'E';
       int fix = 0;
       while (char* token = strtok(ptr, ",")) {
@@ -287,15 +261,11 @@ void readGps() {
         if (field == 6) fix = atoi(token);
         field++;
       }
-      if (fix > 0) {
-        parseLatLng(latStr, lngStr, latDir, lngDir);
-      }
+      if (fix > 0) parseLatLng(latStr, lngStr, latDir, lngDir);
     }
     if (line.startsWith("$GPGLL") || line.startsWith("$GNGLL")) {
-      char buf[80];
-      line.toCharArray(buf, 80);
-      char* ptr = buf;
-      int field = 0;
+      char buf[80]; line.toCharArray(buf, 80);
+      char* ptr = buf; int field = 0;
       char latStr[16] = "", lngStr[16] = "", latDir = 'N', lngDir = 'E';
       char status = 'V';
       while (char* token = strtok(ptr, ",")) {
@@ -307,15 +277,11 @@ void readGps() {
         if (field == 6) status = token[0];
         field++;
       }
-      if (status == 'A') {
-        parseLatLng(latStr, lngStr, latDir, lngDir);
-      }
+      if (status == 'A') parseLatLng(latStr, lngStr, latDir, lngDir);
     }
     if (line.startsWith("$GPVTG") || line.startsWith("$GNVTG")) {
-      char buf[80];
-      line.toCharArray(buf, 80);
-      char* ptr = buf;
-      int field = 0;
+      char buf[80]; line.toCharArray(buf, 80);
+      char* ptr = buf; int field = 0;
       while (char* token = strtok(ptr, ",")) {
         ptr = NULL;
         if (field == 7) { gpsSpeed = round(atof(token) * 1.852); break; }
@@ -324,9 +290,6 @@ void readGps() {
     }
   }
 }
-// ────────────────────────────────────────────────────────────
-//  SIMPLE JSON PARSER (no library needed)
-// ────────────────────────────────────────────────────────────
 String extractJsonStr(const String& json, const String& key) {
   String search = "\"" + key + "\":\"";
   int start = json.indexOf(search);
@@ -346,15 +309,10 @@ int extractJsonInt(const String& json, const String& key) {
   if (end < 0) return 0;
   return json.substring(start, end).toInt();
 }
-// ────────────────────────────────────────────────────────────
-//  FETCH BUS CONFIG FROM SERVER
-// ────────────────────────────────────────────────────────────
 void fetchConfig() {
   if (WiFi.status() != WL_CONNECTED) return;
   String url = String(CONFIG_URL) + String(busId);
-  HTTPClient http;
-  http.begin(url);
-  http.setTimeout(5000);
+  HTTPClient http; http.begin(url); http.setTimeout(5000);
   int code = http.GET();
   if (code == 200) {
     String body = http.getString();
@@ -362,22 +320,15 @@ void fetchConfig() {
     if (seats > 0) totalSeats = seats;
     String name = extractJsonStr(body, "routeName");
     if (name.length() > 0) routeName = name;
-    Serial.print("Config loaded — Seats: ");
-    Serial.print(totalSeats);
-    Serial.print("  Route: ");
-    Serial.println(routeName);
-  } else {
-    Serial.println("Config not found, using defaults");
-  }
+    Serial.print("Config loaded — Seats: "); Serial.print(totalSeats);
+    if (routeName.length() > 0) { Serial.print("  Route: "); Serial.println(routeName); }
+    else { Serial.println("  Route: (configure at /setup)"); }
+  } else { Serial.println("Config not found — create bus at /setup on Railway"); }
   http.end();
 }
-// ────────────────────────────────────────────────────────────
-//  SEND GPS + COUNT TO SERVER
-// ────────────────────────────────────────────────────────────
 bool httpPost(const char* url, const String& body) {
   if (WiFi.status() != WL_CONNECTED) return false;
-  HTTPClient http;
-  http.begin(url);
+  HTTPClient http; http.begin(url);
   http.addHeader("Content-Type", "application/json");
   http.setTimeout(5000);
   int code = http.POST(body);
@@ -395,99 +346,86 @@ void sendLocation() {
     + ",\"seats\":" + String(totalSeats - passengers)
     + ",\"inside\":" + String(passengers)
     + ",\"route\":\"" + routeName + "\""
-    + ",\"gpsFixed\":" + (gpsFixed ? "true" : "false")
-    + "}";
+    + ",\"gpsFixed\":" + (gpsFixed ? "true" : "false") + "}";
   bool ok = httpPost(GPS_URL, body);
-  if (ok) {
-    Serial.print("↑ OK ");
-  } else {
-    Serial.print("↑ FAIL ");
-  }
-  if (gpsFixed) {
-    Serial.print(String(sendLat, 4) + "," + String(sendLng, 4));
-    Serial.print(" " + String(gpsSpeed) + "km/h");
-  } else {
-    Serial.print("GPS:searching...");
-  }
+  if (ok) Serial.print("↑ OK ");
+  else Serial.print("↑ FAIL ");
+  if (gpsFixed) { Serial.print(String(sendLat, 4) + "," + String(sendLng, 4) + " " + String(gpsSpeed) + "km/h"); }
+  else { Serial.print("GPS:searching..."); }
   Serial.println(" Pass:" + String(passengers));
 }
 void sendCount() {
   String body = "{\"busId\":\"" + String(busId) + "\""
     + ",\"inside\":" + String(passengers)
-    + ",\"seats\":" + String(totalSeats - passengers)
-    + "}";
+    + ",\"seats\":" + String(totalSeats - passengers) + "}";
   bool ok = httpPost(COUNT_URL, body);
   Serial.println("↑ COUNT " + String(ok ? "OK" : "FAIL") + " Pass:" + String(passengers));
 }
-// ────────────────────────────────────────────────────────────
-//  SETUP
-// ────────────────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
   gps.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
-  pinMode(TRIG_A, OUTPUT);
-  pinMode(ECHO_A, INPUT);
-  pinMode(TRIG_B, OUTPUT);
-  pinMode(ECHO_B, INPUT);
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, LOW);
-  Serial.println("\n=== TN BusTrack v3 ===");
-  Serial.print("Bus ID: ");
-  Serial.println(busId);
-  if (!connectWifi()) {
-    startConfigPortal();
-    return;
+  Serial.println("GPS: trying 9600 baud (NEO-6M default)...");
+  delay(100);
+  unsigned long gpsCheckStart = millis();
+  while (millis() - gpsCheckStart < 3000) {
+    if (gps.available()) break;
+    delay(10);
   }
-  setupOTA();
-  fetchConfig();
+  if (!gps.available()) {
+    gps.begin(115200, SERIAL_8N1, GPS_RX, GPS_TX);
+    Serial.println("GPS: switched to 115200 baud");
+  } else {
+    Serial.println("GPS: 9600 baud working");
+  }
+  pinMode(TRIG_A, OUTPUT); pinMode(ECHO_A, INPUT);
+  pinMode(TRIG_B, OUTPUT); pinMode(ECHO_B, INPUT);
+  pinMode(LED_BUILTIN, OUTPUT); digitalWrite(LED_BUILTIN, LOW);
+  Serial.println("\n=== TN BusTrack v3 ===");
+  Serial.print("Bus ID: "); Serial.println(busId);
+  if (!connectWifi()) { startConfigPortal(); return; }
+  setupOTA(); fetchConfig();
   Serial.println("Ready.\n");
 }
-// ────────────────────────────────────────────────────────────
-//  MAIN LOOP
-// ────────────────────────────────────────────────────────────
 void loop() {
-  if (configMode) {
-    portalServer.handleClient();
-    return;
-  }
+  if (configMode) { portalServer.handleClient(); return; }
   unsigned long now = millis();
-  ArduinoOTA.handle();
-  checkWiFi();
-  readGps();
+  ArduinoOTA.handle(); checkWiFi(); readGps();
+  if (!gpsFixed && now - lastGpsDebug > 5000) {
+    lastGpsDebug = now;
+    unsigned long gpsAge = now - lastGpsData;
+    if (lastGpsData > 0 && gpsAge < 3000) {
+      Serial.print("GPS: data received, no 3D fix yet — searching for satellites (cold start can take 30-60s)");
+      if (gpsLat != 0 || gpsLng != 0) { Serial.print(" — last valid: "); Serial.print(gpsLat, 4); Serial.print(","); Serial.println(gpsLng, 4); }
+      else { Serial.println(); }
+    } else if (lastGpsData > 0) { Serial.print("GPS: no data for "); Serial.print(gpsAge / 1000); Serial.println("s — check antenna connection"); }
+    else { Serial.println("GPS: NO DATA at all — check baud rate (should be 115200) and wiring (GPS TX→ESP32 pin16, GPS RX→ESP32 pin17)"); }
+  }
   long dA = readDistance(TRIG_A, ECHO_A);
   long dB = readDistance(TRIG_B, ECHO_B);
   bool a = dA > THRESHOLD && dA < 999;
   bool b = dB > THRESHOLD && dB < 999;
-  if (state == 3) {
-    if (!a && !b) { debounce = 0; state = 0; }
-  } else if (state == 0) {
+  if (state == 3) { if (!a && !b) { debounce = 0; state = 0; } }
+  else if (state == 0) {
     if (a && !b) { if (++debounce >= 2) { debounce = 0; state = 1; stateStart = now; } }
     else if (b && !a) { if (++debounce >= 2) { debounce = 0; state = 2; stateStart = now; } }
     else { debounce = 0; }
   } else if (a && b) {
     if (++debounce >= 2) {
-      debounce = 0;
-      stateStart = now;
+      debounce = 0; stateStart = now;
       if (state == 1) { passengers++; state = 3; pendingPassengers = passengers; Serial.print("ENTER "); Serial.println(passengers); }
       else if (state == 2) { passengers--; if (passengers < 0) passengers = 0; state = 3; pendingPassengers = passengers; Serial.print("EXIT "); Serial.println(passengers); }
     }
-  } else if (state > 0 && state < 3 && now - stateStart > 2000) {
-    debounce = 0; state = 0;
-  } else { debounce = 0; }
+  } else if (state > 0 && state < 3 && now - stateStart > 2000) { debounce = 0; state = 0; }
+  else { debounce = 0; }
   if (gpsFixed && now - lastGpsFix > 30000) {
-    gpsFixed = false;
-    gpsLat = 0;
-    gpsLng = 0;
-    Serial.println("GPS fix lost");
+    gpsFixed = false; gpsLat = 0; gpsLng = 0;
+    Serial.println("GPS: fix lost");
   }
   if (pendingPassengers >= 0 && (now - lastCountSend > COUNT_INTERVAL)) {
-    lastCountSend = now;
-    sendCount();
-    pendingPassengers = -1;
+    lastCountSend = now; sendCount(); pendingPassengers = -1;
   }
   if (now - lastGpsSend > GPS_INTERVAL) {
-    lastGpsSend = now;
-    sendLocation();
+    lastGpsSend = now; sendLocation();
   }
   delay(5);
 }

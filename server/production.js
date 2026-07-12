@@ -39,6 +39,7 @@ function ensureDataDir() {
 }
 
 function loadConfigs() {
+  let count = 0;
   try {
     if (fs.existsSync(CONFIG_FILE)) {
       const data = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
@@ -50,7 +51,7 @@ function loadConfigs() {
         Object.assign(busPositions, data.busPositions);
         console.log(`Restored ${Object.keys(data.busPositions).length} bus position(s) from file`);
       }
-      const count = Object.keys(busConfigs).length;
+      count = Object.keys(busConfigs).length;
       Object.keys(busConfigs).forEach(id => {
         deletedBuses.delete(id);
         if (!busPositions[id]) {
@@ -92,8 +93,7 @@ function loadConfigs() {
       });
     }
     global.__busPositions = busPositions;
-      if (count > 0) console.log(`Loaded ${count} bus config(s) from file`);
-    }
+    if (count > 0) console.log(`Loaded ${count} bus config(s) from file`);
   } catch (e) { console.error('Failed to load configs:', e.message); }
 }
 

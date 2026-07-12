@@ -9,13 +9,13 @@
 // ── CHANGE THESE 3 LINES ────────────────────────────────────
 const char* WIFI_SSID     = "SSID";
 const char* WIFI_PASSWORD = "Nikilan31";
-const char* BUS_ID        = "TN07 828 1122";
+const char* BUS_ID        = "M31";
 // ────────────────────────────────────────────────────────────
 
 // ── SERVER URLs ─────────────────────────────────────────────
-const char* GPS_URL    = "https://tn-bustrack-production.up.railway.app/api/buses/update";
-const char* COUNT_URL  = "https://tn-bustrack-production.up.railway.app/api/buses/count";
-const char* CONFIG_URL = "https://tn-bustrack-production.up.railway.app/api/config/";
+const char* GPS_URL    = "https://tn-bustrack-production-c340.up.railway.app/api/buses/update";
+const char* COUNT_URL  = "https://tn-bustrack-production-c340.up.railway.app/api/buses/count";
+const char* CONFIG_URL = "https://tn-bustrack-production-c340.up.railway.app/api/config/";
 // ────────────────────────────────────────────────────────────
 
 // ── PIN DEFINITIONS ─────────────────────────────────────────
