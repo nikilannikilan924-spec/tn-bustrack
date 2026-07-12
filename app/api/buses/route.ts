@@ -1,10 +1,9 @@
-import { getBuses } from '@/server/routes/buses';
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  return new Response(JSON.stringify(getBuses()), {
-    headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'public, s-maxage=5, stale-while-revalidate=2'
-    }
+  const positions = (global as any).__busPositions;
+  const buses = positions ? Object.values(positions) : [];
+  return new Response(JSON.stringify(buses), {
+    headers: { 'Content-Type': 'application/json' }
   });
 }
