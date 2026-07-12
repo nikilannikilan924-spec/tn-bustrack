@@ -54,7 +54,6 @@ export default function NearbyPage() {
   }, []);
 
   useEffect(() => {
-    if (stops.length === 0) return;
     const unsubscribe = subscribeBusLocationUpdate((payload: any) => {
       if (Array.isArray(payload)) {
         setBuses(payload.map(b => normalizeAPIBus(b, stops)));
