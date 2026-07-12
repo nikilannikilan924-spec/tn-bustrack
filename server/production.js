@@ -326,6 +326,34 @@ app.post('/api/bus/create', (req, res) => {
     stops: bus.stops || [],
     updatedAt: new Date().toISOString()
   };
+  // Re-activate bus on map immediately so it doesn't blink
+  const stops = busConfigs[busId].stops || [];
+  const firstStop = stops.length > 0 ? stops[0] : null;
+  const posLat = bus.latitude ?? (firstStop ? firstStop.lat : 11.3);
+  const posLng = bus.longitude ?? (firstStop ? firstStop.lng : 78.1);
+  if (!busPositions[busId]) {
+    busPositions[busId] = {
+      busId,
+      routeId: routeKey,
+      totalSeats: busConfigs[busId].totalSeats,
+      lat: Number(posLat),
+      lng: Number(posLng),
+      speed: 0,
+      seats: busConfigs[busId].totalSeats,
+      inside: 0,
+      route: busConfigs[busId].routeName || busId,
+      busNumber: busConfigs[busId].busNumber || busId,
+      gpsFixed: false,
+      currentStop: firstStop ? firstStop.name : '',
+      area: firstStop ? firstStop.name : '',
+      road: busConfigs[busId].routeName || '',
+      city: '',
+      distFromStop: '0.00',
+      nextStops: [],
+      lastUpdate: new Date().toISOString(),
+    };
+    io.to('all-buses').emit('busUpdate', busPositions[busId]);
+  }
   saveConfigs();
   res.status(201).json({ bus, config: busConfigs[busId] });
 });
