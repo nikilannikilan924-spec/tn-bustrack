@@ -98,6 +98,7 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
   }, []);
 
   const prevDataRef = useRef<Map<string, string>>(new Map());
+  const prevIconRef = useRef<Map<string, string>>(new Map());
   const animFrameRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
@@ -106,6 +107,7 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
 
     const markers = markersRef.current;
     const prev = prevDataRef.current;
+    const prevIcon = prevIconRef.current;
     const anims = animFrameRef.current;
     const seen = new Set<string>();
 
@@ -113,6 +115,7 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
       seen.add(bus.id);
       const targetLatLng: L.LatLngExpression = [bus.latitude, bus.longitude];
       const serialized = `${bus.latitude},${bus.longitude},${bus.speed},${bus.seatsAvailable},${bus.currentStop},${bus.status},${bus.nextStops.map(s=>s.name+s.etaMin).join('|')}`;
+      const iconKey = `${bus.status}|${bus.number}|${bus.currentStop}`;
 
       if (markers.has(bus.id)) {
         const marker = markers.get(bus.id)!;
@@ -141,7 +144,10 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
               anims.set(bus.id, requestAnimationFrame(animate));
             }
           }
-          marker.setIcon(makeBusIcon(bus, 14));
+          if (prevIcon.get(bus.id) !== iconKey) {
+            marker.setIcon(makeBusIcon(bus, 14));
+            prevIcon.set(bus.id, iconKey);
+          }
           if (marker.getPopup()) {
             marker.setPopupContent(makePopupHtml(bus));
           }
@@ -155,6 +161,7 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
         marker.addTo(map);
         markers.set(bus.id, marker);
         prev.set(bus.id, serialized);
+        prevIcon.set(bus.id, iconKey);
       }
     });
 

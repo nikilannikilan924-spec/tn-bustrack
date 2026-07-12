@@ -1,7 +1,8 @@
-const CACHE = 'tn-bustrack-v3';
-const PRECACHE = ['/', '/offline', '/nearby', '/manifest.json', '/icon.svg', '/icon-192.png', '/icon-512.png', '/offline.html'];
+const CACHE = 'tn-bustrack-v4';
+const PRECACHE = ['/', '/offline', '/manifest.json', '/icon.svg', '/icon-192.png', '/icon-512.png', '/offline.html'];
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE)
       .then((cache) => cache.addAll(PRECACHE).catch(() => {}))
@@ -25,22 +26,6 @@ self.addEventListener('fetch', (event) => {
       fetch(request).catch(() =>
         caches.match('/offline.html').then((r) => r || new Response('Offline', { status: 200 }))
       )
-    );
-    return;
-  }
-
-  if (url.origin === self.location.origin) {
-    event.respondWith(
-      caches.match(request).then((cached) => {
-        if (cached) return cached;
-        return fetch(request).then((response) => {
-          if (response && response.status === 200) {
-            const clone = response.clone();
-            caches.open(CACHE).then((cache) => cache.put(request, clone));
-          }
-          return response;
-        });
-      })
     );
     return;
   }

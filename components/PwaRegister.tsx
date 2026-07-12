@@ -5,11 +5,15 @@ import { useEffect, useState } from 'react';
 export default function PwaRegister() {
   const [installPrompt, setInstallPrompt] = useState<Event | null>(null);
   const [installed, setInstalled] = useState(false);
+  const [isIos, setIsIos] = useState(false);
 
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
+
+    const isIosDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    setIsIos(isIosDevice);
 
     const handleBeforeInstall = (e: Event) => {
       e.preventDefault();
@@ -41,7 +45,32 @@ export default function PwaRegister() {
     if (result.outcome === 'accepted') setInstallPrompt(null);
   };
 
-  if (installed || !installPrompt) return null;
+  if (installed) return null;
+
+  if (isIos && !installPrompt) {
+    return (
+      <div className="fixed bottom-24 left-4 right-4 z-50 mx-auto max-w-sm animate-slide-up md:bottom-6">
+        <div className="gradient-header flex items-center gap-3 rounded-2xl px-4 py-3 shadow-2xl">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/20 text-sm font-bold text-white shadow-lg backdrop-blur">
+            TN
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-white">Install TN BusTrack</p>
+            <p className="text-[11px] text-white/70">Tap Share → Add to Home Screen</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setInstallPrompt(null)}
+            className="shrink-0 rounded-xl bg-white/20 px-3 py-2 text-xs font-semibold text-white backdrop-blur transition hover:bg-white/30"
+          >
+            OK
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!installPrompt) return null;
 
   return (
     <div className="fixed bottom-24 left-4 right-4 z-50 mx-auto max-w-sm animate-slide-up md:bottom-6">
