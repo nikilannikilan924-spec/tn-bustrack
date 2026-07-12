@@ -58,24 +58,28 @@ function loadConfigs() {
           const cfg = busConfigs[id];
           const stops = cfg.stops || [];
           const firstStop = stops.length > 0 ? stops[0] : null;
+          const virtualLat = firstStop ? firstStop.lat : 11.3;
+          const virtualLng = firstStop ? firstStop.lng : 78.1;
+          const virtualStop = firstStop ? firstStop.name : '';
+          const nextStops = getNextStops(virtualStop, cfg.routeKey || id, virtualLat, virtualLng, cfg.stops);
           busPositions[id] = {
             busId: id,
             routeId: cfg.routeKey || id,
             totalSeats: cfg.totalSeats || 42,
-            lat: firstStop ? firstStop.lat : 11.3,
-            lng: firstStop ? firstStop.lng : 78.1,
+            lat: virtualLat,
+            lng: virtualLng,
             speed: 0,
             seats: cfg.totalSeats || 42,
             inside: 0,
             route: cfg.routeName || id,
             busNumber: cfg.busNumber || id,
             gpsFixed: false,
-            currentStop: firstStop ? firstStop.name : '',
-            area: firstStop ? firstStop.name : '',
+            currentStop: virtualStop,
+            area: virtualStop,
             road: cfg.routeName || '',
             city: '',
             distFromStop: '0.00',
-            nextStops: [],
+            nextStops,
             lastUpdate: new Date().toISOString(),
           };
         }
@@ -88,7 +92,11 @@ function loadConfigs() {
           const cfg = busConfigs[id];
           const stops = cfg.stops || [];
           const firstStop = stops.length > 0 ? stops[0] : null;
-          busPositions[id] = { busId: id, routeId: cfg.routeKey || id, totalSeats: cfg.totalSeats || 42, lat: firstStop ? firstStop.lat : 11.3, lng: firstStop ? firstStop.lng : 78.1, speed: 0, seats: cfg.totalSeats || 42, inside: 0, route: cfg.routeName || id, busNumber: cfg.busNumber || id, gpsFixed: false, currentStop: firstStop ? firstStop.name : '', area: firstStop ? firstStop.name : '', road: cfg.routeName || '', city: '', distFromStop: '0.00', nextStops: [], lastUpdate: new Date().toISOString() };
+          const virtualLat = firstStop ? firstStop.lat : 11.3;
+          const virtualLng = firstStop ? firstStop.lng : 78.1;
+          const virtualStop = firstStop ? firstStop.name : '';
+          const nextStops = getNextStops(virtualStop, cfg.routeKey || id, virtualLat, virtualLng, cfg.stops);
+          busPositions[id] = { busId: id, routeId: cfg.routeKey || id, totalSeats: cfg.totalSeats || 42, lat: virtualLat, lng: virtualLng, speed: 0, seats: cfg.totalSeats || 42, inside: 0, route: cfg.routeName || id, busNumber: cfg.busNumber || id, gpsFixed: false, currentStop: virtualStop, area: virtualStop, road: cfg.routeName || '', city: '', distFromStop: '0.00', nextStops, lastUpdate: new Date().toISOString() };
         }
       });
     }
@@ -295,24 +303,28 @@ app.get('/api/buses', (req, res) => {
       const cfg = busConfigs[busId];
       const stops = cfg.stops || [];
       const firstStop = stops.length > 0 ? stops[0] : null;
+      const virtualLat = firstStop ? firstStop.lat : 11.3;
+      const virtualLng = firstStop ? firstStop.lng : 78.1;
+      const virtualStop = firstStop ? firstStop.name : '';
+      const nextStops = getNextStops(virtualStop, cfg.routeKey || busId, virtualLat, virtualLng, cfg.stops);
       busPositions[busId] = {
         busId,
         routeId: cfg.routeKey || busId,
         totalSeats: cfg.totalSeats || 42,
-        lat: firstStop ? firstStop.lat : 11.3,
-        lng: firstStop ? firstStop.lng : 78.1,
+        lat: virtualLat,
+        lng: virtualLng,
         speed: 0,
         seats: cfg.totalSeats || 42,
         inside: 0,
         route: cfg.routeName || busId,
         busNumber: cfg.busNumber || busId,
         gpsFixed: false,
-        currentStop: firstStop ? firstStop.name : '',
-        area: firstStop ? firstStop.name : '',
+        currentStop: virtualStop,
+        area: virtualStop,
         road: cfg.routeName || '',
         city: '',
         distFromStop: '0.00',
-        nextStops: [],
+        nextStops,
         lastUpdate: new Date().toISOString(),
       };
     }
@@ -405,6 +417,8 @@ app.post('/api/bus/create', (req, res) => {
   const posLat = bus.latitude ?? (firstStop ? firstStop.lat : 11.3);
   const posLng = bus.longitude ?? (firstStop ? firstStop.lng : 78.1);
   if (!busPositions[busId]) {
+    const virtualStop = firstStop ? firstStop.name : '';
+    const nextStops = getNextStops(virtualStop, routeKey, Number(posLat), Number(posLng), busConfigs[busId].stops);
     busPositions[busId] = {
       busId,
       routeId: routeKey,
@@ -417,12 +431,12 @@ app.post('/api/bus/create', (req, res) => {
       route: busConfigs[busId].routeName || busId,
       busNumber: busConfigs[busId].busNumber || busId,
       gpsFixed: false,
-      currentStop: firstStop ? firstStop.name : '',
-      area: firstStop ? firstStop.name : '',
+      currentStop: virtualStop,
+      area: virtualStop,
       road: busConfigs[busId].routeName || '',
       city: '',
       distFromStop: '0.00',
-      nextStops: [],
+      nextStops,
       lastUpdate: new Date().toISOString(),
     };
     io.to('all-buses').emit('busUpdate', busPositions[busId]);
@@ -589,11 +603,13 @@ app.get('/health', (req, res) => {
 
 // ── STALE BUS CLEANUP (every 15s, remove buses offline >120s) ─
 // 120s allows ESP32 brownout reboot + WiFi reconnect time
+// Only remove buses that had a live GPS fix; keep virtual positions (gpsFixed=false)
 setInterval(() => {
   const now = Date.now();
   Object.keys(busPositions).forEach((busId) => {
     const bus = busPositions[busId];
     if (!bus || !bus.lastUpdate) return;
+    if (!bus.gpsFixed) return;
     const age = now - new Date(bus.lastUpdate).getTime();
     if (age > 120000) {
       console.log(`Removing stale bus ${busId} (offline ${Math.round(age / 1000)}s)`);

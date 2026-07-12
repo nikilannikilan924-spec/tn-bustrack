@@ -56,7 +56,18 @@ export function MapBoard() {
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [stopSearch, setStopSearch] = useState('');
 
+  async function fetchBuses() {
+    try {
+      const res = await fetch('/api/buses');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) setBuses(data.map(normalizeBus));
+      }
+    } catch (_) {}
+  }
+
   useEffect(() => {
+    fetchBuses();
     const unsub1 = subscribeCurrentBuses((buses: any[]) => {
       setBuses(buses.map(normalizeBus));
     });
@@ -80,16 +91,6 @@ export function MapBoard() {
 
     return () => { unsub1(); unsub2(); unsub3(); };
   }, []);
-
-  async function fetchBuses() {
-    try {
-      const res = await fetch('/api/buses');
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) setBuses(data.map(normalizeBus));
-      }
-    } catch (_) {}
-  }
 
   const allStopNames = useMemo(() => {
     const names = new Set<string>();
