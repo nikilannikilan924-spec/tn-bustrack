@@ -52,15 +52,15 @@ function makePopupHtml(bus: LiveBus): string {
     ? `<b>${bus.nextStops[0].name}</b> — ${bus.nextStops[0].etaMin} min (${bus.nextStops[0].distKm} km)`
     : '—';
   const passengersInside = bus.seatCapacity - bus.seatsAvailable;
+  const gpsLocation = [bus.area, bus.road, bus.city].filter(Boolean).join(', ');
   return `<div style="font-family:system-ui;min-width:200px">
     <div style="font-weight:700;font-size:15px;margin-bottom:2px">${bus.number}</div>
     <div style="font-size:11px;color:#64748b;margin-bottom:6px">${bus.routeName}</div>
     <table style="font-size:12px;width:100%">
       <tr><td style="color:#64748b;padding:2px 0">Speed</td><td style="font-weight:600;text-align:right;padding:2px 0">${bus.speed} km/h</td></tr>
-      <tr><td style="color:#64748b;padding:2px 0">Current Stop</td><td style="font-weight:600;text-align:right;padding:2px 0;color:#0EA5E9">${bus.currentStop}</td></tr>
-      <tr><td style="color:#64748b;padding:2px 0">Next Stop ETA</td><td style="font-weight:600;text-align:right;padding:2px 0">${bus.nextStops[0] ? bus.nextStops[0].name + ' ' + bus.nextStops[0].etaMin + 'min' : '—'}</td></tr>
+      <tr><td style="color:#64748b;padding:2px 0">Location</td><td style="font-weight:600;text-align:right;padding:2px 0;color:#0EA5E9">${gpsLocation || bus.currentStop || bus.latitude.toFixed(4) + ', ' + bus.longitude.toFixed(4)}</td></tr>
+      <tr><td style="color:#64748b;padding:2px 0">Next Stop</td><td style="font-weight:600;text-align:right;padding:2px 0">${bus.nextStops[0] ? bus.nextStops[0].name + ' ' + bus.nextStops[0].etaMin + 'min' : '—'}</td></tr>
       <tr><td style="color:#64748b;padding:2px 0">Passengers</td><td style="font-weight:600;text-align:right;padding:2px 0">${passengersInside} / ${bus.seatCapacity}</td></tr>
-      <tr><td style="color:#64748b;padding:2px 0">Location</td><td style="font-weight:400;text-align:right;padding:2px 0;font-size:10px;color:#94a3b8">${[bus.area, bus.road, bus.city].filter(Boolean).join(', ') || bus.latitude.toFixed(4) + ', ' + bus.longitude.toFixed(4)}</td></tr>
       <tr><td style="color:#64748b;padding:2px 0">GPS</td><td style="font-weight:600;text-align:right;padding:2px 0;font-size:10px">${bus.gpsFixed === true ? '<span style="color:#22C55E">FIX</span>' : '<span style="color:#F59E0B">SEARCHING</span>'}</td></tr>
     </table>
   </div>`;
