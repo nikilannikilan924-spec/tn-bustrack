@@ -46,6 +46,7 @@ function loadConfigs() {
         data.deletedBuses.forEach(id => deletedBuses.add(id));
       }
       const count = Object.keys(busConfigs).length;
+      Object.keys(busConfigs).forEach(id => deletedBuses.delete(id));
       if (count > 0) console.log(`Loaded ${count} bus config(s) from file`);
     }
   } catch (e) { console.error('Failed to load configs:', e.message); }

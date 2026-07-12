@@ -61,7 +61,7 @@ function makePopupHtml(bus: LiveBus): string {
       <tr><td style="color:#64748b;padding:2px 0">Next Stop ETA</td><td style="font-weight:600;text-align:right;padding:2px 0">${bus.nextStops[0] ? bus.nextStops[0].name + ' ' + bus.nextStops[0].etaMin + 'min' : '—'}</td></tr>
       <tr><td style="color:#64748b;padding:2px 0">Passengers</td><td style="font-weight:600;text-align:right;padding:2px 0">${passengersInside} / ${bus.seatCapacity}</td></tr>
       <tr><td style="color:#64748b;padding:2px 0">Location</td><td style="font-weight:400;text-align:right;padding:2px 0;font-size:10px;color:#94a3b8">${[bus.area, bus.road, bus.city].filter(Boolean).join(', ') || bus.latitude.toFixed(4) + ', ' + bus.longitude.toFixed(4)}</td></tr>
-      <tr><td style="color:#64748b;padding:2px 0">GPS</td><td style="font-weight:600;text-align:right;padding:2px 0;font-size:10px">${bus.gpsFixed !== false ? '<span style="color:#22C55E">FIX</span>' : '<span style="color:#F59E0B">SEARCHING</span>'}</td></tr>
+      <tr><td style="color:#64748b;padding:2px 0">GPS</td><td style="font-weight:600;text-align:right;padding:2px 0;font-size:10px">${bus.gpsFixed === true ? '<span style="color:#22C55E">FIX</span>' : '<span style="color:#F59E0B">SEARCHING</span>'}</td></tr>
     </table>
   </div>`;
 }
@@ -98,6 +98,7 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
   }, []);
 
   const prevDataRef = useRef<Map<string, string>>(new Map());
+  const animFrameRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     const map = mapRef.current;
@@ -105,6 +106,7 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
 
     const markers = markersRef.current;
     const prev = prevDataRef.current;
+    const anims = animFrameRef.current;
     const seen = new Set<string>();
 
     buses.forEach((bus) => {
@@ -116,6 +118,7 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
         const marker = markers.get(bus.id)!;
         const last = prev.get(bus.id);
         if (last !== serialized) {
+          if (anims.has(bus.id)) cancelAnimationFrame(anims.get(bus.id)!);
           const cur = marker.getLatLng();
           if (cur.lat !== bus.latitude || cur.lng !== bus.longitude) {
             const startLat = cur.lat, startLng = cur.lng;
@@ -127,9 +130,10 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
               const lat = startLat + (endLat - startLat) * t;
               const lng = startLng + (endLng - startLng) * t;
               marker.setLatLng([lat, lng]);
-              if (t < 1) requestAnimationFrame(animate);
+              if (t < 1) anims.set(bus.id, requestAnimationFrame(animate));
+              else anims.delete(bus.id);
             }
-            requestAnimationFrame(animate);
+            anims.set(bus.id, requestAnimationFrame(animate));
           }
           marker.setIcon(makeBusIcon(bus, 14));
           if (marker.getPopup()) {
