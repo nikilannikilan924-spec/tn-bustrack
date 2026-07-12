@@ -45,6 +45,10 @@ function loadConfigs() {
       if (data.deletedBuses && Array.isArray(data.deletedBuses)) {
         data.deletedBuses.forEach(id => deletedBuses.add(id));
       }
+      if (data.busPositions) {
+        Object.assign(busPositions, data.busPositions);
+        console.log(`Restored ${Object.keys(data.busPositions).length} bus position(s) from file`);
+      }
       const count = Object.keys(busConfigs).length;
       Object.keys(busConfigs).forEach(id => deletedBuses.delete(id));
       if (count > 0) console.log(`Loaded ${count} bus config(s) from file`);
@@ -55,7 +59,7 @@ function loadConfigs() {
 function saveConfigs() {
   try {
     ensureDataDir();
-    const data = { busConfigs, deletedBuses: [...deletedBuses] };
+    const data = { busConfigs, deletedBuses: [...deletedBuses], busPositions };
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2));
   } catch (e) { console.error('Failed to save configs:', e.message); }
 }
@@ -244,6 +248,34 @@ app.post('/api/buses/count', (req, res) => {
 
 // ── APP: GET ALL LIVE BUSES ──────────────────────────────────
 app.get('/api/buses', (req, res) => {
+  // Fill in virtual positions for configured buses without live data
+  Object.keys(busConfigs).forEach(busId => {
+    if (!busPositions[busId]) {
+      const cfg = busConfigs[busId];
+      const stops = cfg.stops || [];
+      const firstStop = stops.length > 0 ? stops[0] : null;
+      busPositions[busId] = {
+        busId,
+        routeId: cfg.routeKey || busId,
+        totalSeats: cfg.totalSeats || 42,
+        lat: firstStop ? firstStop.lat : 11.3,
+        lng: firstStop ? firstStop.lng : 78.1,
+        speed: 0,
+        seats: cfg.totalSeats || 42,
+        inside: 0,
+        route: cfg.routeName || busId,
+        busNumber: cfg.busNumber || busId,
+        gpsFixed: false,
+        currentStop: firstStop ? firstStop.name : '',
+        area: firstStop ? firstStop.name : '',
+        road: cfg.routeName || '',
+        city: '',
+        distFromStop: '0.00',
+        nextStops: [],
+        lastUpdate: new Date().toISOString(),
+      };
+    }
+  });
   res.json(Object.values(busPositions));
 });
 
