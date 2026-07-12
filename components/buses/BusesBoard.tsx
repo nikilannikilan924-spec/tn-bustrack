@@ -44,8 +44,21 @@ export function BusesBoard() {
   useEffect(() => {
     fetchBuses();
     const unsub = subscribeBusLocationUpdate((payload: any) => {
-      const raw = Array.isArray(payload) ? payload : [payload];
-      if (Array.isArray(raw)) setBuses(raw.map(normalize));
+      if (Array.isArray(payload)) {
+        setBuses(payload.map(normalize));
+      } else {
+        setBuses(prev => {
+          const item = normalize(payload);
+          const id = item.id || payload.busId || payload.id;
+          const idx = prev.findIndex(b => b.id === id);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = item;
+            return next;
+          }
+          return [...prev, item];
+        });
+      }
     });
     return unsub;
   }, []);

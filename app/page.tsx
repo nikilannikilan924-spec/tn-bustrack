@@ -22,8 +22,20 @@ export default function HomePage() {
   useEffect(() => {
     fetchBuses();
     const unsub = subscribeBusLocationUpdate((payload: any) => {
-      const raw = Array.isArray(payload) ? payload : [payload];
-      if (Array.isArray(raw)) setBuses(raw);
+      if (Array.isArray(payload)) {
+        setBuses(payload);
+      } else {
+        setBuses(prev => {
+          const id = payload.busId || payload.id;
+          const idx = prev.findIndex(b => b.busId === id);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = payload;
+            return next;
+          }
+          return [...prev, payload];
+        });
+      }
     });
     return unsub;
   }, []);

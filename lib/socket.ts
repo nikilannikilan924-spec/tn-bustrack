@@ -22,7 +22,7 @@ export function getSocket() {
 export function subscribeBusLocationUpdate(callback: (payload: any) => void) {
   const client = getSocket();
   client?.on('currentBuses', callback);
-  client?.on('busUpdate', (bus: any) => callback([bus]));
+  client?.on('busUpdate', callback);
   return () => {
     client?.off('currentBuses', callback);
     client?.off('busUpdate', callback);

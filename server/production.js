@@ -216,7 +216,7 @@ app.post('/api/buses/update', (req, res) => {
 
   res.json({ ok: true });
 
-  if (gpsFixed && validCoord(lat, lng)) {
+  if (gpsFixed && validCoord) {
     reverseGeocode(Number(lat), Number(lng), busId);
   }
 });

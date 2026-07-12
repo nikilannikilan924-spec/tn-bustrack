@@ -6,7 +6,7 @@ import { fetchBuses, fetchStops, normalizeAPIBus } from '@/lib/types';
 import type { Bus, Stop } from '@/lib/types';
 import { useLanguage } from '@/lib/LanguageContext';
 import { findNearbyStops, type NearbyStop, getCrowdednessColor } from '@/lib/nearby';
-import { formatKm } from '@/lib/distance';
+import { haversineKm, formatKm } from '@/lib/distance';
 
 export default function NearbyPage() {
   const { t } = useLanguage();
@@ -15,58 +15,101 @@ export default function NearbyPage() {
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [radius, setRadius] = useState(1.5);
+  const [radius, setRadius] = useState(5);
 
   useEffect(() => {
+    let doneStops = false;
+    let doneGeo = false;
+    function tryDone() {
+      if (doneStops && doneGeo) setLoading(false);
+    }
+
     fetchStops().then(async allStops => {
       setStops(allStops);
       const apiBuses = await fetchBuses(allStops);
       setBuses(apiBuses);
-      setLoading(false);
+      doneStops = true;
+      tryDone();
     });
 
     if (!navigator.geolocation) {
       setError('Geolocation not supported');
-      setLoading(false);
-      return;
+      doneGeo = true;
+      tryDone();
+    } else {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          doneGeo = true;
+          tryDone();
+        },
+        (err) => {
+          setError(err.message + '. You can enter coordinates below.');
+          doneGeo = true;
+          tryDone();
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
     }
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setLoading(false);
-      },
-      (err) => {
-        setError(err.message);
-        setLoading(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
   }, []);
 
   useEffect(() => {
     if (stops.length === 0) return;
     const unsubscribe = subscribeBusLocationUpdate((payload: any) => {
-      const raw = Array.isArray(payload) ? payload : [payload];
-      const live = raw.map(b => normalizeAPIBus(b, stops));
-      setBuses(live);
+      if (Array.isArray(payload)) {
+        setBuses(payload.map(b => normalizeAPIBus(b, stops)));
+      } else {
+        setBuses(prev => {
+          const updated = normalizeAPIBus(payload, stops);
+          const idx = prev.findIndex(b => b.id === updated.id);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = updated;
+            return next;
+          }
+          return [...prev, updated];
+        });
+      }
     });
     return unsubscribe;
   }, [stops]);
+
+  const [manualLat, setManualLat] = useState('');
+  const [manualLng, setManualLng] = useState('');
 
   const nearbyStops: NearbyStop[] = useMemo(() => {
     if (!location) return [];
     return findNearbyStops(location.lat, location.lng, stops, buses, radius);
   }, [location, stops, buses, radius]);
 
+  const nearbyBuses = useMemo(() => {
+    if (!location || buses.length === 0) return [];
+    return buses
+      .map(b => ({
+        bus: b,
+        distKm: haversineKm(location.lat, location.lng, b.latitude, b.longitude),
+      }))
+      .filter(x => x.distKm <= radius)
+      .sort((a, b) => a.distKm - b.distKm);
+  }, [location, buses, radius]);
+
   const handleRefresh = useCallback(() => {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
-      (pos) => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      (pos) => { setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setError(null); },
       (err) => setError(err.message),
       { enableHighAccuracy: true, timeout: 10000 }
     );
   }, []);
+
+  function useManualLocation() {
+    const lat = parseFloat(manualLat);
+    const lng = parseFloat(manualLng);
+    if (!isNaN(lat) && !isNaN(lng)) {
+      setLocation({ lat, lng });
+      setError(null);
+    }
+  }
 
   return (
     <div className="space-y-5 pb-28 max-sm:space-y-4">
@@ -93,18 +136,27 @@ export default function NearbyPage() {
         </div>
       )}
 
-      {error && !loading && (
-        <div className="rounded-3xl border border-dashed border-red-200 bg-red-50/50 p-6 text-center backdrop-blur">
+      {!location && !loading && (
+        <div className="rounded-3xl border border-dashed border-[var(--border-subtle)] bg-white/50 p-6 text-center backdrop-blur">
           <p className="mb-2 text-lg">📍</p>
-          <p className="text-sm font-medium text-red-600">{t('nearby.error')}</p>
-          <p className="mt-1 text-xs text-red-400">{error}</p>
-          <button
-            type="button"
-            onClick={handleRefresh}
-            className="mt-4 rounded-xl bg-red-500/10 px-5 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-500/20"
-          >
-            {t('nearby.retry')}
-          </button>
+          <p className="text-sm font-medium text-[var(--text-primary)]">{t('nearby.error')}</p>
+          {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
+          <div className="mx-auto mt-4 flex max-w-xs gap-2">
+            <input value={manualLat} onChange={e => setManualLat(e.target.value)} placeholder="Latitude"
+              className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-xs outline-none" />
+            <input value={manualLng} onChange={e => setManualLng(e.target.value)} placeholder="Longitude"
+              className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-xs outline-none" />
+          </div>
+          <div className="mt-3 flex justify-center gap-2">
+            <button onClick={useManualLocation}
+              className="rounded-xl bg-[#0EA5E9] px-5 py-2 text-xs font-semibold text-white hover:bg-[#0284C7]">
+              Set Location
+            </button>
+            <button onClick={handleRefresh}
+              className="rounded-xl bg-[var(--overlay-hover)] px-5 py-2 text-xs font-semibold text-[var(--text-secondary)] hover:bg-black/10">
+              {t('nearby.retry')}
+            </button>
+          </div>
         </div>
       )}
 
@@ -152,16 +204,40 @@ export default function NearbyPage() {
             </div>
           </div>
 
-          {nearbyStops.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-[var(--border-subtle)] bg-white/50 p-12 text-center backdrop-blur">
-              <p className="mb-2 text-3xl">🗺️</p>
-              <p className="text-sm font-medium text-[var(--text-primary)]">
-                {t('nearby.none')}
-              </p>
-              <p className="mt-1 text-xs text-[var(--text-muted)]">
-                {t('nearby.noneDesc')}
-              </p>
+          {nearbyBuses.length > 0 && (
+            <div className="rounded-3xl border border-[var(--border)] bg-white/80 p-5 shadow-lg backdrop-blur">
+              <h2 className="font-orbitron text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-secondary)]">
+                Nearby Buses
+              </h2>
+              <div className="mt-3 space-y-2">
+                {nearbyBuses.map(({ bus, distKm }) => (
+                  <div key={bus.id} className="flex items-center justify-between rounded-xl bg-[var(--overlay-subtle)] px-4 py-3">
+                    <div>
+                      <p className="text-sm font-semibold text-[var(--text-primary)]">{bus.number}</p>
+                      <p className="font-jetbrains text-[10px] text-[var(--text-muted)]">{formatKm(distKm)} away</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-jetbrains text-sm font-bold text-[var(--text-primary)]">{bus.speed} km/h</p>
+                      <p className="text-[10px] text-[var(--text-muted)]">{bus.passengersInside}/{bus.seatCapacity}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
+          )}
+
+          {nearbyStops.length === 0 ? (
+            nearbyBuses.length === 0 && (
+              <div className="rounded-3xl border border-dashed border-[var(--border-subtle)] bg-white/50 p-12 text-center backdrop-blur">
+                <p className="mb-2 text-3xl">🗺️</p>
+                <p className="text-sm font-medium text-[var(--text-primary)]">
+                  {t('nearby.none')}
+                </p>
+                <p className="mt-1 text-xs text-[var(--text-muted)]">
+                  {t('nearby.noneDesc')}
+                </p>
+              </div>
+            )
           ) : (
             <div className="space-y-4">
               <div className="flex items-center justify-between">

@@ -27,9 +27,20 @@ export function AdminBusTable() {
   useEffect(() => {
     fetchStops().then(allStops => {
       const unsubscribe = subscribeBusLocationUpdate((payload: any) => {
-        const raw = Array.isArray(payload) ? payload : [payload];
-        const live = raw.map(b => normalizeAPIBus(b, allStops));
-        setBuses(live);
+        if (Array.isArray(payload)) {
+          setBuses(payload.map(b => normalizeAPIBus(b, allStops)));
+        } else {
+          setBuses(prev => {
+            const updated = normalizeAPIBus(payload, allStops);
+            const idx = prev.findIndex(b => b.id === updated.id);
+            if (idx >= 0) {
+              const next = [...prev];
+              next[idx] = updated;
+              return next;
+            }
+            return [...prev, updated];
+          });
+        }
       });
       return unsubscribe;
     });

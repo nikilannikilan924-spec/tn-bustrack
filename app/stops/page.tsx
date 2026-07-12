@@ -27,9 +27,20 @@ export default function StopsPage() {
   useEffect(() => {
     if (stops.length === 0) return;
     const unsubscribe = subscribeBusLocationUpdate((payload: any) => {
-      const raw = Array.isArray(payload) ? payload : [payload];
-      const live = raw.map(b => normalizeAPIBus(b, stops));
-      setBuses(live);
+      if (Array.isArray(payload)) {
+        setBuses(payload.map(b => normalizeAPIBus(b, stops)));
+      } else {
+        setBuses(prev => {
+          const updated = normalizeAPIBus(payload, stops);
+          const idx = prev.findIndex(b => b.id === updated.id);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = updated;
+            return next;
+          }
+          return [...prev, updated];
+        });
+      }
     });
     return unsubscribe;
   }, [stops]);

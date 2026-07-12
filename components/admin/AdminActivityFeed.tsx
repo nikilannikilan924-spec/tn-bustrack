@@ -68,16 +68,28 @@ export function AdminActivityFeed() {
   useEffect(() => {
     fetchStops().then(allStops => {
       const unsubscribe = subscribeBusLocationUpdate((payload: any) => {
-        const raw = Array.isArray(payload) ? payload : [payload];
-        const live = raw.map(b => normalizeAPIBus(b, allStops));
-        setBuses(live);
-        busesRef.current = live;
-        if (live.length && raw.length) {
-          const bus = live[0];
-          setActivities((prev) => [
-            generateActivity(bus, bus.speed > 0 ? 'arrival' : 'delay'),
-            ...prev
-          ].slice(0, 20));
+        if (Array.isArray(payload)) {
+          const live = payload.map(b => normalizeAPIBus(b, allStops));
+          setBuses(live);
+          busesRef.current = live;
+          if (live.length) {
+            const bus = live[0];
+            setActivities((prev) => [
+              generateActivity(bus, bus.speed > 0 ? 'arrival' : 'delay'),
+              ...prev
+            ].slice(0, 20));
+          }
+        } else {
+          setBuses(prev => {
+            const updated = normalizeAPIBus(payload, allStops);
+            const idx = prev.findIndex(b => b.id === updated.id);
+            if (idx >= 0) {
+              const next = [...prev];
+              next[idx] = updated;
+              return next;
+            }
+            return [...prev, updated];
+          });
         }
       });
       return unsubscribe;

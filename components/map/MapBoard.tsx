@@ -78,9 +78,7 @@ export function MapBoard() {
       setBuses(prev => prev.filter(b => b.id !== busId));
     });
 
-    fetchBuses();
-    const interval = setInterval(fetchBuses, 4000);
-    return () => { unsub1(); unsub2(); unsub3(); clearInterval(interval); };
+    return () => { unsub1(); unsub2(); unsub3(); };
   }, []);
 
   async function fetchBuses() {
