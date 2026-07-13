@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { subscribeCurrentBuses, subscribeSingleBusUpdate, subscribeBusRemoved } from '@/lib/socket';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -89,7 +89,10 @@ export function MapBoard() {
       setBuses(prev => prev.filter(b => b.id !== busId));
     });
 
-    return () => { unsub1(); unsub2(); unsub3(); };
+    return () => {
+      unsub1(); unsub2(); unsub3();
+      if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
+    };
   }, []);
 
   const allStopNames = useMemo(() => {
@@ -110,43 +113,47 @@ export function MapBoard() {
   const selectedBus = filteredBuses.find(b => b.id === selectedBusId) || null;
 
   const [phoneGpsStatus, setPhoneGpsStatus] = useState<string | null>(null);
+  const [tracking, setTracking] = useState(false);
+  const watchIdRef = useRef<number | null>(null);
 
-  async function sendPhoneLocation() {
+  function startPhoneTracking() {
     if (!navigator.geolocation) {
       setPhoneGpsStatus('Geolocation not available');
       return;
     }
-    setPhoneGpsStatus('Getting location...');
-    navigator.geolocation.getCurrentPosition(
+    setPhoneGpsStatus('Tracking started...');
+    setTracking(true);
+    watchIdRef.current = navigator.geolocation.watchPosition(
       async (pos) => {
         try {
-          const res = await fetch('/api/buses/update', {
+          await fetch('/api/buses/update', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               busId: 'M31',
               lat: pos.coords.latitude,
               lng: pos.coords.longitude,
-              speed: 0,
+              speed: pos.coords.speed || 0,
               gpsFixed: true
             })
           });
-          if (res.ok) {
-            setPhoneGpsStatus(`GPS set ✓ (${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)})`);
-            setTimeout(() => setPhoneGpsStatus(null), 4000);
-          } else {
-            setPhoneGpsStatus('Server error');
-          }
-        } catch {
-          setPhoneGpsStatus('Network error');
-        }
+        } catch {}
       },
       (err) => {
         setPhoneGpsStatus(`Error: ${err.message}`);
-        setTimeout(() => setPhoneGpsStatus(null), 3000);
       },
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 5000 }
     );
+  }
+
+  function stopPhoneTracking() {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    setTracking(false);
+    setPhoneGpsStatus('Tracking stopped');
+    setTimeout(() => setPhoneGpsStatus(null), 2000);
   }
 
   const findBackupBus = (bus: LiveBus): LiveBus | null => {
@@ -361,11 +368,14 @@ export function MapBoard() {
 
       <button
         type="button"
-        onClick={sendPhoneLocation}
-        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-2xl bg-[#0EA5E9] px-5 py-3 text-sm font-semibold text-white shadow-2xl transition hover:bg-[#0284C7] active:scale-95"
+        onClick={tracking ? stopPhoneTracking : startPhoneTracking}
+        className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold text-white shadow-2xl transition active:scale-95 ${
+          tracking
+            ? 'bg-red-500 hover:bg-red-600'
+            : 'bg-[#0EA5E9] hover:bg-[#0284C7]'
+        }`}
       >
-        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-        Set Bus GPS (Phone)
+        {tracking ? 'Stop Tracking' : '📍 Track with Phone GPS'}
       </button>
 
       {phoneGpsStatus && (
