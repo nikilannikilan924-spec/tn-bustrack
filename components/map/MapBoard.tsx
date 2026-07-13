@@ -109,6 +109,46 @@ export function MapBoard() {
   const running = filteredBuses.filter((bus) => bus.status === 'running').length;
   const selectedBus = filteredBuses.find(b => b.id === selectedBusId) || null;
 
+  const [phoneGpsStatus, setPhoneGpsStatus] = useState<string | null>(null);
+
+  async function sendPhoneLocation() {
+    if (!navigator.geolocation) {
+      setPhoneGpsStatus('Geolocation not available');
+      return;
+    }
+    setPhoneGpsStatus('Getting location...');
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const res = await fetch('/api/buses/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              busId: 'M31',
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              speed: 0,
+              gpsFixed: true
+            })
+          });
+          if (res.ok) {
+            setPhoneGpsStatus(`GPS set ✓ (${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)})`);
+            setTimeout(() => setPhoneGpsStatus(null), 4000);
+          } else {
+            setPhoneGpsStatus('Server error');
+          }
+        } catch {
+          setPhoneGpsStatus('Network error');
+        }
+      },
+      (err) => {
+        setPhoneGpsStatus(`Error: ${err.message}`);
+        setTimeout(() => setPhoneGpsStatus(null), 3000);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }
+
   const findBackupBus = (bus: LiveBus): LiveBus | null => {
     if (bus.seatsAvailable > 0) return null;
     return filteredBuses.find((b) => b.id !== bus.id && b.seatsAvailable > 0) ?? null;
@@ -318,6 +358,21 @@ export function MapBoard() {
           </div>
         </aside>
       </div>
+
+      <button
+        type="button"
+        onClick={sendPhoneLocation}
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-2xl bg-[#0EA5E9] px-5 py-3 text-sm font-semibold text-white shadow-2xl transition hover:bg-[#0284C7] active:scale-95"
+      >
+        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+        Set Bus GPS (Phone)
+      </button>
+
+      {phoneGpsStatus && (
+        <div className="fixed bottom-24 right-6 z-50 max-w-xs rounded-2xl bg-[var(--bg-primary)] px-4 py-3 text-sm shadow-2xl ring-1 ring-[var(--border-color)]">
+          {phoneGpsStatus}
+        </div>
+      )}
     </div>
   );
 }

@@ -248,7 +248,7 @@ app.post('/api/buses/update', (req, res) => {
     inside: pInside,
     route: cfg.routeName || route || busId,
     busNumber: cfg.busNumber || busId,
-    gpsFixed: gpsFixed || false,
+    gpsFixed: validCoord ? (gpsFixed || false) : (prev ? prev.gpsFixed : false),
     currentStop: stop.name || '',
     area: prev?.area || '',
     road: prev?.road || '',
