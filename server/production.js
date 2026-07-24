@@ -282,7 +282,18 @@ app.post('/api/buses/count', (req, res) => {
   if (deletedBuses.has(busId)) return res.status(403).json({ error: 'Bus deleted' });
 
   const pInside = inside ?? 0;
-  if (busPositions[busId]) {
+  if (!busPositions[busId]) {
+    const cfg = busConfigs[busId] || {};
+    const stops = cfg.stops || [];
+    busPositions[busId] = {
+      busId, routeId: cfg.routeKey || busId, totalSeats: cfg.totalSeats || 42,
+      lat: 13.0827, lng: 80.2707, speed: 0, seats: cfg.totalSeats || 42,
+      inside: pInside, route: cfg.routeName || busId, busNumber: cfg.busNumber || busId,
+      gpsFixed: false, currentStop: '', area: '', road: '', city: '',
+      distFromStop: '0.00', nextStops: getNextStops('', busId, 13.0827, 80.2707, stops),
+      lastUpdate: new Date().toISOString()
+    };
+  } else {
     const cfg = busConfigs[busId] || {};
     const totalSeats = cfg.totalSeats || 42;
     busPositions[busId].inside = pInside;
