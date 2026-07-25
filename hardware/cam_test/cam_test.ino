@@ -1,5 +1,6 @@
 #include <esp_camera.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <DNSServer.h>
 #include <esp_heap_caps.h>
 #include "esp_http_server.h"
@@ -25,6 +26,10 @@
 #define HREF_GPIO_NUM     7
 #define PCLK_GPIO_NUM     13
 #define LED_PIN 2
+
+const char* BUS_ID = "M31";
+const char* API_HOST = "tn-bustrack-production-4b42.up.railway.app";
+WiFiClientSecure* secureClient = nullptr;
 
 DNSServer dnsServer;
 httpd_handle_t httpd = NULL;
@@ -63,6 +68,7 @@ int totalIn = 0;
 int totalOut = 0;
 int totalFrames = 0;
 int detectFrames = 0;
+bool registered = false;
 void blinkPattern(int n, int t) {
   for (int i = 0; i < n; i++) {
     digitalWrite(LED_PIN, HIGH); delay(t);
@@ -78,6 +84,19 @@ void blinkError(int n) {
 }
 
 void startServer();
+
+void sendToRailway(const char* path, const char* body) {
+  if (!secureClient) {
+    secureClient = new WiFiClientSecure();
+    secureClient->setInsecure();
+  }
+  if (!secureClient->connect(API_HOST, 443)) return;
+  secureClient->print(String("POST ") + path + " HTTP/1.1\r\nHost: " + API_HOST +
+    "\r\nContent-Type: application/json\r\nContent-Length: " + strlen(body) +
+    "\r\nConnection: close\r\n\r\n" + body);
+  while (secureClient->available()) secureClient->read();
+  secureClient->stop();
+}
 
 static esp_err_t cam_handler(httpd_req_t* req) {
   camera_fb_t* fb = esp_camera_fb_get();
@@ -284,12 +303,14 @@ void setup() {
   if (s) { s->set_framesize(s, FRAMESIZE_QQVGA); s->set_pixformat(s, PIXFORMAT_GRAYSCALE); }
 
   IPAddress apIP(192, 168, 4, 1);
-  WiFi.mode(WIFI_AP);
+  WiFi.mode(WIFI_AP_STA);
   WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
   if (!WiFi.softAP("ESP32-S3-CAM", "12345678"))
     blinkError(3);
 
   setupTFLite();
+
+  WiFi.begin("SSID", "Nikilan31");
 
   dnsServer.start(53, "*", apIP);
   startServer();
@@ -315,4 +336,18 @@ void loop() {
     if ((det[z] = detectPersonInZone(img, kImgWidth, kImgHeight, z))) any = true;
 
   if (any) { detectFrames++; updateTracking(det); }
+
+  static unsigned long lastSend = 0;
+  if (WiFi.status() == WL_CONNECTED && millis() > 8000) {
+    if (!registered) {
+      registered = true;
+      char buf[128]; snprintf(buf, sizeof(buf), "{\"busId\":\"%s\",\"lat\":13.0,\"lng\":80.0,\"speed\":0,\"seats\":42,\"inside\":%d,\"route\":\"M31\"}", BUS_ID, passengers);
+      sendToRailway("/api/buses/update", buf);
+    }
+    if (millis() - lastSend > 5000) {
+      lastSend = millis();
+      char buf[64]; snprintf(buf, sizeof(buf), "{\"busId\":\"%s\",\"inside\":%d}", BUS_ID, passengers);
+      sendToRailway("/api/buses/count", buf);
+    }
+  }
 }
