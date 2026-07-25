@@ -194,8 +194,6 @@ void setupTFLite() {
   resolver.AddConcatenation(); resolver.AddReshape();
 
   model = tflite::GetModel(g_person_detect_model_data);
-  if (model->version() != TFLITE_SCHEMA_VERSION)
-    while (1) { blinkPattern(4, 100); delay(1000); }
 
   static tflite::MicroInterpreter si(model, resolver, tensor_arena, kTensorArenaSize);
   interpreter = &si;
