@@ -279,7 +279,7 @@ void setup() {
   c.xclk_freq_hz = 20000000; c.pixel_format = PIXFORMAT_GRAYSCALE;
   c.frame_size = FRAMESIZE_QQVGA; c.jpeg_quality = 10;
   c.fb_count = 2; c.grab_mode = CAMERA_GRAB_LATEST;
-  c.fb_location = CAMERA_FB_IN_PSRAM;
+  c.fb_location = CAMERA_FB_IN_DRAM;
 
   esp_err_t err = esp_camera_init(&c);
   if (err != ESP_OK) blinkError(1);
