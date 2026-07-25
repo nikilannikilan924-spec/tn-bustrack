@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name=viewport content='width=device-width,initial-scale=1'>
+<title>GPS Sender</title>
+<style>
+body{margin:0;background:#111;color:#0f0;font-family:monospace;text-align:center;padding:20px}
+.gps{font-size:14px;margin:10px 0;color:#888}
+.status{font-size:12px;color:#0f0;margin:20px 0}
+button{background:#0f0;color:#000;border:none;padding:10px 30px;font-size:18px;border-radius:8px;margin:10px;cursor:pointer}
+</style>
+</head>
+<body>
+<h2>Bus GPS Sender</h2>
+<div class=gps id=gps>Getting GPS...</div>
+<div class=status id=status>Not started</div>
+<button onclick="start()">Start Sending</button>
+<button onclick="stop()">Stop</button>
+
+<script>
+let watchId = null;
+let intervalId = null;
+let lat = 0, lng = 0;
+const BUS_ID = 'M31';
+const API = 'https://tn-bustrack-production-4b42.up.railway.app';
+
+function start() {
+  if (!navigator.geolocation) { document.getElementById('status').textContent = 'GPS not available'; return; }
+  watchId = navigator.geolocation.watchPosition(p => {
+    lat = p.coords.latitude; lng = p.coords.longitude;
+    document.getElementById('gps').innerHTML = `Lat: ${lat.toFixed(6)}<br>Lng: ${lng.toFixed(6)}`;
+  }, e => document.getElementById('status').textContent = 'GPS error: ' + e.message, { enableHighAccuracy: true });
+  intervalId = setInterval(sendGPS, 3000);
+  document.getElementById('status').textContent = 'Sending every 3s...';
+}
+
+function stop() {
+  if (watchId) navigator.geolocation.clearWatch(watchId);
+  if (intervalId) clearInterval(intervalId);
+  watchId = null; intervalId = null;
+  document.getElementById('status').textContent = 'Stopped';
+}
+
+async function sendGPS() {
+  if (!lat && !lng) return;
+  try {
+    let r = await fetch(API + '/api/buses/update', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ busId: BUS_ID, lat, lng, speed: 0, seats: 42, inside: 0, route: 'Route 31' })
+    });
+    document.getElementById('status').textContent = 'Sent GPS OK';
+  } catch(e) {
+    document.getElementById('status').textContent = 'Send failed: ' + e.message;
+  }
+}
+</script>
+</body>
+</html>
