@@ -75,10 +75,15 @@ export default function SetupPage() {
   useEffect(() => {
     if (!gpsOn) return;
     const gpsInterval = setInterval(async () => {
+      let inside = 0;
+      try {
+        const r = await fetch('http://192.168.4.1/status');
+        if (r.ok) { const j = await r.json(); inside = j.p ?? 0; }
+      } catch (_) {}
       await fetch('/api/buses/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ busId: 'M31', lat: gpsLat, lng: gpsLng, speed: 0, seats: 42, inside: 0, route: 'Route 31' })
+        body: JSON.stringify({ busId: 'M31', lat: gpsLat, lng: gpsLng, speed: 0, seats: 42, inside, route: 'Route 31' })
       });
     }, 3000);
     return () => clearInterval(gpsInterval);

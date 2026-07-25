@@ -1,6 +1,5 @@
 #include <esp_camera.h>
 #include <WiFi.h>
-#include <WiFiClientSecure.h>
 #include <DNSServer.h>
 #include "esp_http_server.h"
 
@@ -29,44 +28,12 @@ httpd_handle_t httpd = NULL;
 volatile int passengers = 0;
 int totalFrames = 0;
 
-const char* BUS_ID = "M31";
-const char* WIFI_SSID = "SSID";
-const char* WIFI_PASS = "Nikilan31";
-const char* API_HOST = "tn-bustrack-production-4b42.up.railway.app";
-
 void blinkPattern(int n, int t) {
   for (int i = 0; i < n; i++) {
     digitalWrite(LED_PIN, LOW); delay(t);
     digitalWrite(LED_PIN, HIGH); delay(t);
   }
 }
-
-const char GPS_HTML[] PROGMEM = R"rawliteral(
-<!DOCTYPE html><html><head><meta name=viewport content='width=device-width,initial-scale=1'>
-<title>GPS Sender</title><style>
-body{margin:0;background:#111;color:#0f0;font-family:monospace;text-align:center;padding:20px}
-.gps{font-size:14px;margin:10px 0;color:#888}.status{font-size:12px;margin:20px 0}
-button{background:#0f0;color:#000;border:none;padding:10px 30px;font-size:18px;border-radius:8px;margin:10px;cursor:pointer}
-</style></head><body>
-<h2>Bus GPS Sender</h2>
-<div class=gps id=gps>Getting GPS...</div><div class=status id=status>Not started</div>
-<button onclick="start()">Start</button><button onclick="stop()">Stop</button>
-<script>
-let i;let la=0,lo=0;
-function start(){
-if(!navigator.geolocation)return;
-navigator.geolocation.watchPosition(p=>{la=p.coords.latitude;lo=p.coords.longitude;
-document.getElementById('gps').innerHTML='Lat: '+la.toFixed(6)+'<br>Lng: '+lo.toFixed(6)},e=>{},{enableHighAccuracy:true});
-i=setInterval(()=>{
-if(!la&&!lo)return;
-fetch('https://tn-bustrack-production-4b42.up.railway.app/api/buses/update',{method:'POST',headers:{'Content-Type':'application/json'},
-body:JSON.stringify({busId:'M31',lat:la,lng:lo,speed:0,seats:42,inside:0,route:'Route 31'})})
-.then(()=>document.getElementById('status').textContent='Sent GPS OK')
-.catch(e=>document.getElementById('status').textContent='Error: '+e.message)},3000);
-document.getElementById('status').textContent='Sending every 3s'}
-function stop(){if(i)clearInterval(i);document.getElementById('status').textContent='Stopped'}
-</script></body></html>
-)rawliteral";
 
 void startServer();
 void sendCount();
@@ -100,6 +67,7 @@ static esp_err_t status_handler(httpd_req_t* req) {
   char json[64];
   snprintf(json, sizeof(json), "{\"p\":%d,\"f\":%d}", passengers, totalFrames);
   httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
   httpd_resp_send(req, json, strlen(json));
   return ESP_OK;
 }
@@ -147,12 +115,6 @@ static esp_err_t root_handler(httpd_req_t* req) {
   return ESP_OK;
 }
 
-static esp_err_t gps_handler(httpd_req_t* req) {
-  httpd_resp_set_type(req, "text/html");
-  httpd_resp_send(req, GPS_HTML, strlen(GPS_HTML));
-  return ESP_OK;
-}
-
 static esp_err_t reset_handler(httpd_req_t* req) {
   passengers = 0; totalFrames = 0;
   httpd_resp_set_type(req, "application/json");
@@ -170,37 +132,12 @@ void startServer() {
     { .uri = "/status", .method = HTTP_GET, .handler = status_handler },
     { .uri = "/reset", .method = HTTP_GET, .handler = reset_handler },
     { .uri = "/inc", .method = HTTP_GET, .handler = inc_handler },
-    { .uri = "/gps", .method = HTTP_GET, .handler = gps_handler },
   };
   if (httpd_start(&httpd, &config) == ESP_OK)
-    for (int i = 0; i < 6; i++) httpd_register_uri_handler(httpd, &r[i]);
+    for (int i = 0; i < 5; i++) httpd_register_uri_handler(httpd, &r[i]);
 }
 
-bool registered = false;
 
-void registerBus() {
-  WiFiClientSecure cl;
-  cl.setInsecure();
-  if (!cl.connect(API_HOST, 443)) return;
-  String body = "{\"busId\":\"" + String(BUS_ID) + "\",\"lat\":13.0827,\"lng\":80.2707,\"speed\":0,\"seats\":42,\"inside\":" + String(passengers) + ",\"route\":\"Route 31\"}";
-  cl.print("POST /api/buses/update HTTP/1.1\r\nHost: " + String(API_HOST) +
-    "\r\nContent-Type: application/json\r\nContent-Length: " + body.length() +
-    "\r\nConnection: close\r\n\r\n" + body);
-  while (cl.available()) cl.read();
-  cl.stop();
-  registered = true;
-}
-
-void sendCount() {
-  WiFiClientSecure cl;
-  cl.setInsecure();
-  if (!cl.connect(API_HOST, 443)) return;
-  String body = "{\"busId\":\"" + String(BUS_ID) + "\",\"inside\":" + String(passengers) + "}";
-  cl.print("POST /api/buses/count HTTP/1.1\r\nHost: " + String(API_HOST) +
-    "\r\nContent-Type: application/json\r\nContent-Length: " + body.length() +
-    "\r\nConnection: close\r\n\r\n" + body);
-  cl.stop();
-}
 
 void setup() {
   pinMode(LED_PIN, OUTPUT); pinMode(BUTTON_PIN, INPUT_PULLUP);
@@ -225,11 +162,10 @@ void setup() {
   if (err != ESP_OK) { while (1) { blinkPattern(1, 100); delay(1000); } }
 
   IPAddress apIP(192, 168, 4, 1);
-  WiFi.mode(WIFI_AP_STA);
+  WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
   if (!WiFi.softAP("ESP32-S3-CAM", "12345678"))
     while (1) { blinkPattern(3, 100); delay(1000); }
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
 
   dnsServer.start(53, "*", apIP);
   startServer();
@@ -241,12 +177,6 @@ void loop() {
   totalFrames++;
 
   if (digitalRead(BUTTON_PIN) == LOW) { passengers = 0; delay(300); }
-
-  static unsigned long lastSend = 0;
-  if (WiFi.status() == WL_CONNECTED) {
-    if (!registered && millis() > 3000) { registerBus(); }
-    if (millis() - lastSend > 3000) { lastSend = millis(); sendCount(); }
-  }
 
   delay(100);
 }

@@ -27,7 +27,11 @@ const char* CONFIG_URL = "https://tn-bustrack-production-c340.up.railway.app/api
 #define ECHO_B 15
 #define RELAY_A 13
 #define RELAY_B 4
-#define THRESHOLD 30
+// Sensors face each other on opposite sides of the door frame.
+// Idle: ultrasound travels across the door and reflects off the far sensor.
+//   Distance = door width (e.g. 85cm). Sensor reads in-range → "blocked" (idle).
+// Person passes: body absorbs/scatters the pulse → sensor times out (999).
+#define THRESHOLD 40
 // ────────────────────────────────────────────────────────────
 
 // ── BUS CONFIG ──────────────────────────────────────────────
@@ -54,8 +58,10 @@ int debounce = 0;          // consecutive stable readings counter
 // ── TIMING ──────────────────────────────────────────────────
 unsigned long lastGpsSend = 0;
 unsigned long lastCountSend = 0;
+unsigned long lastCountTime = 0; // last time a passenger was counted
 const unsigned long GPS_INTERVAL = 8000;  // send GPS every 8s
 const unsigned long COUNT_INTERVAL = 2000; // send count change within 2s
+const unsigned long COUNT_COOLDOWN = 1500; // min ms between counts (prevents double-count)
 
 // ── NON-BLOCKING SENSOR READING ────────────────────────────
 // 3-state: IDLE → WAITING_HIGH → WAITING_LOW → DONE
@@ -118,16 +124,27 @@ void updateSensor(struct USSensor* s) {
   }
 }
 
+// sensorBlocked = true means sensor is in its normal idle state.
+// Idle: pulse travels across door, reflects off far sensor → distance in range (40-998).
+// Person: body absorbs/scatters pulse → sensor times out → distance=999 → blocked=false.
 bool sensorBlocked(struct USSensor* s) {
-  return s->step == S_DONE && s->valid && s->distance < THRESHOLD;
+  return s->step == S_DONE && s->valid && s->distance > THRESHOLD && s->distance < 999;
 }
 
 void readSensors() {
+  // Stagger readings: do sensor A first, then sensor B on next call.
+  // This avoids crosstalk when two HC-SR04 face each other.
   if (sensorA.step == S_IDLE && sensorB.step == S_IDLE) {
+    // Start A only; B will start after A completes
     startSensorRead(&sensorA);
-    startSensorRead(&sensorB);
+    return;
   }
   updateSensor(&sensorA);
+  if (sensorA.step != S_DONE) return; // wait for A
+  if (sensorB.step == S_IDLE) {
+    startSensorRead(&sensorB);
+    return;
+  }
   updateSensor(&sensorB);
 }
 
@@ -395,6 +412,20 @@ void loop() {
     bool a = sensorBlocked(&sensorA);
     bool b = sensorBlocked(&sensorB);
 
+    // Debug: print raw distances when something changes
+    if (sensorA.distance >= 999 || sensorB.distance >= 999 || sensorA.distance < 1 || sensorB.distance < 1) {
+      Serial.print("SENSOR dA=");
+      Serial.print(sensorA.distance);
+      Serial.print(" dB=");
+      Serial.print(sensorB.distance);
+      Serial.print(" st=");
+      Serial.print(state);
+      Serial.print(" a=");
+      Serial.print(a);
+      Serial.print(" b=");
+      Serial.println(b);
+    }
+
     if (state == 3) {
       if (!a && !b) {
         if (++debounce >= 2) { debounce = 0; state = 0; }
@@ -414,6 +445,13 @@ void loop() {
     } else if (a && b) {
       if (++debounce >= 2) {
         debounce = 0;
+        unsigned long now = millis();
+        if (now - lastCountTime < COUNT_COOLDOWN) {
+          state = 3;
+          resetSensors();
+          return;
+        }
+        lastCountTime = now;
         if (state == 1) {
           passengers++;
           state = 3;
