@@ -24,7 +24,6 @@
 #define HREF_GPIO_NUM     7
 #define PCLK_GPIO_NUM     13
 #define LED_PIN 2
-#define BUTTON_PIN 0
 
 DNSServer dnsServer;
 httpd_handle_t httpd = NULL;
@@ -254,7 +253,7 @@ void updateTracking(bool* det) {
 }
 
 void setup() {
-  pinMode(LED_PIN, OUTPUT); pinMode(BUTTON_PIN, INPUT_PULLUP);
+  pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW); delay(200);
 
   camera_config_t c;
@@ -295,12 +294,6 @@ void setup() {
 void loop() {
   dnsServer.processNextRequest();
   totalFrames++;
-
-  if (digitalRead(BUTTON_PIN) == LOW) {
-    passengers = 0; totalIn = 0; totalOut = 0;
-    for (int i = 0; i < NUM_ZONES; i++) { tracks[i].active = false; tracks[i].countedIn = false; tracks[i].countedOut = false; }
-    nextTrackId = 0; delay(300);
-  }
 
   camera_fb_t* fb = esp_camera_fb_get();
   if (!fb) return;
