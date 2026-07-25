@@ -1,6 +1,7 @@
 #include <esp_camera.h>
 #include <WiFi.h>
 #include <DNSServer.h>
+#include <esp_heap_caps.h>
 #include "esp_http_server.h"
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "tensorflow/lite/micro/micro_interpreter.h"
@@ -32,7 +33,7 @@ constexpr int kImgWidth = 96;
 constexpr int kImgHeight = 96;
 constexpr int kInputSize = kImgWidth * kImgHeight;
 constexpr int kTensorArenaSize = 120 * 1024;
-alignas(16) uint8_t tensor_arena[kTensorArenaSize];
+uint8_t* tensor_arena = nullptr;
 
 const float CONFIDENCE_THRESHOLD = 0.5f;
 
@@ -182,6 +183,11 @@ void downscale(uint8_t* src, int sw, int sh, uint8_t* dst) {
 }
 
 void setupTFLite() {
+  tensor_arena = (uint8_t*)heap_caps_malloc(kTensorArenaSize, MALLOC_CAP_SPIRAM);
+  if (!tensor_arena) tensor_arena = (uint8_t*)malloc(kTensorArenaSize);
+  if (!tensor_arena)
+    while (1) { blinkPattern(5, 100); delay(1000); }
+
   resolver.AddConv2D(); resolver.AddDepthwiseConv2D(); resolver.AddAveragePool2D();
   resolver.AddSoftmax(); resolver.AddFullyConnected(); resolver.AddRelu();
   resolver.AddMaxPool2D(); resolver.AddQuantize(); resolver.AddPad();
@@ -269,7 +275,7 @@ void setup() {
   c.xclk_freq_hz = 20000000; c.pixel_format = PIXFORMAT_GRAYSCALE;
   c.frame_size = FRAMESIZE_QQVGA; c.jpeg_quality = 10;
   c.fb_count = 2; c.grab_mode = CAMERA_GRAB_LATEST;
-  c.fb_location = CAMERA_FB_IN_DRAM;
+  c.fb_location = CAMERA_FB_IN_PSRAM;
 
   esp_err_t err = esp_camera_init(&c);
   if (err != ESP_OK) { while (1) { blinkPattern(1, 100); delay(1000); } }
