@@ -211,14 +211,11 @@ void setupTFLite() {
 bool detectPersonInZone(uint8_t* fullFrame, int srcW, int srcH, int zone) {
   int zoneH = srcH / NUM_ZONES;
   int zy = zone * zoneH;
-  uint8_t buf[kInputSize];
   for (int y = 0; y < kImgHeight; y++) {
     int sy = zy + y * zoneH / kImgHeight; if (sy >= srcH) sy = srcH - 1;
     for (int x = 0; x < kImgWidth; x++)
-      buf[y * kImgWidth + x] = fullFrame[sy * srcW + x * srcW / kImgWidth];
+      input->data.int8[y * kImgWidth + x] = static_cast<int8_t>(fullFrame[sy * srcW + x * srcW / kImgWidth] - 128);
   }
-  for (int i = 0; i < kInputSize; i++)
-    input->data.int8[i] = static_cast<int8_t>(buf[i] - 128);
 
   if (interpreter->Invoke() != kTfLiteOk) return false;
   TfLiteTensor* o = interpreter->output(0);
@@ -311,9 +308,7 @@ void loop() {
   camera_fb_t* fb = esp_camera_fb_get();
   if (!fb) return;
 
-  uint8_t* img = (uint8_t*)malloc(kInputSize);
-  if (!img) { esp_camera_fb_return(fb); return; }
-
+  static uint8_t img[kInputSize];
   downscale(fb->buf, fb->width, fb->height, img);
   esp_camera_fb_return(fb);
 
@@ -323,6 +318,4 @@ void loop() {
     if ((det[z] = detectPersonInZone(img, kImgWidth, kImgHeight, z))) any = true;
 
   if (any) { detectFrames++; updateTracking(det); }
-
-  free(img);
 }
