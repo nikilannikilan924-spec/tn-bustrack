@@ -41,6 +41,33 @@ void blinkPattern(int n, int t) {
   }
 }
 
+const char GPS_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html><html><head><meta name=viewport content='width=device-width,initial-scale=1'>
+<title>GPS Sender</title><style>
+body{margin:0;background:#111;color:#0f0;font-family:monospace;text-align:center;padding:20px}
+.gps{font-size:14px;margin:10px 0;color:#888}.status{font-size:12px;margin:20px 0}
+button{background:#0f0;color:#000;border:none;padding:10px 30px;font-size:18px;border-radius:8px;margin:10px;cursor:pointer}
+</style></head><body>
+<h2>Bus GPS Sender</h2>
+<div class=gps id=gps>Getting GPS...</div><div class=status id=status>Not started</div>
+<button onclick="start()">Start</button><button onclick="stop()">Stop</button>
+<script>
+let i;let la=0,lo=0;
+function start(){
+if(!navigator.geolocation)return;
+navigator.geolocation.watchPosition(p=>{la=p.coords.latitude;lo=p.coords.longitude;
+document.getElementById('gps').innerHTML='Lat: '+la.toFixed(6)+'<br>Lng: '+lo.toFixed(6)},e=>{},{enableHighAccuracy:true});
+i=setInterval(()=>{
+if(!la&&!lo)return;
+fetch('https://tn-bustrack-production-4b42.up.railway.app/api/buses/update',{method:'POST',headers:{'Content-Type':'application/json'},
+body:JSON.stringify({busId:'M31',lat:la,lng:lo,speed:0,seats:42,inside:0,route:'Route 31'})})
+.then(()=>document.getElementById('status').textContent='Sent GPS OK')
+.catch(e=>document.getElementById('status').textContent='Error: '+e.message)},3000);
+document.getElementById('status').textContent='Sending every 3s'}
+function stop(){if(i)clearInterval(i);document.getElementById('status').textContent='Stopped'}
+</script></body></html>
+)rawliteral";
+
 void startServer();
 void sendCount();
 
@@ -120,6 +147,12 @@ static esp_err_t root_handler(httpd_req_t* req) {
   return ESP_OK;
 }
 
+static esp_err_t gps_handler(httpd_req_t* req) {
+  httpd_resp_set_type(req, "text/html");
+  httpd_resp_send(req, GPS_HTML, strlen(GPS_HTML));
+  return ESP_OK;
+}
+
 static esp_err_t reset_handler(httpd_req_t* req) {
   passengers = 0; totalFrames = 0;
   httpd_resp_set_type(req, "application/json");
@@ -137,9 +170,10 @@ void startServer() {
     { .uri = "/status", .method = HTTP_GET, .handler = status_handler },
     { .uri = "/reset", .method = HTTP_GET, .handler = reset_handler },
     { .uri = "/inc", .method = HTTP_GET, .handler = inc_handler },
+    { .uri = "/gps", .method = HTTP_GET, .handler = gps_handler },
   };
   if (httpd_start(&httpd, &config) == ESP_OK)
-    for (int i = 0; i < 5; i++) httpd_register_uri_handler(httpd, &r[i]);
+    for (int i = 0; i < 6; i++) httpd_register_uri_handler(httpd, &r[i]);
 }
 
 bool registered = false;
