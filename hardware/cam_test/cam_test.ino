@@ -66,8 +66,15 @@ int detectFrames = 0;
 
 void blinkPattern(int n, int t) {
   for (int i = 0; i < n; i++) {
-    digitalWrite(LED_PIN, LOW); delay(t);
     digitalWrite(LED_PIN, HIGH); delay(t);
+    digitalWrite(LED_PIN, LOW); delay(t);
+  }
+}
+
+void blinkError(int n) {
+  while (1) {
+    blinkPattern(n, 300);
+    delay(1500);
   }
 }
 
@@ -185,8 +192,7 @@ void downscale(uint8_t* src, int sw, int sh, uint8_t* dst) {
 void setupTFLite() {
   tensor_arena = (uint8_t*)heap_caps_malloc(kTensorArenaSize, MALLOC_CAP_SPIRAM);
   if (!tensor_arena) tensor_arena = (uint8_t*)malloc(kTensorArenaSize);
-  if (!tensor_arena)
-    while (1) { blinkPattern(5, 100); delay(1000); }
+  if (!tensor_arena) blinkError(5);
 
   resolver.AddConv2D(); resolver.AddDepthwiseConv2D(); resolver.AddAveragePool2D();
   resolver.AddSoftmax(); resolver.AddFullyConnected(); resolver.AddRelu();
@@ -276,7 +282,7 @@ void setup() {
   c.fb_location = CAMERA_FB_IN_PSRAM;
 
   esp_err_t err = esp_camera_init(&c);
-  if (err != ESP_OK) { while (1) { blinkPattern(1, 100); delay(1000); } }
+  if (err != ESP_OK) blinkError(1);
 
   sensor_t* s = esp_camera_sensor_get();
   if (s) { s->set_framesize(s, FRAMESIZE_QQVGA); s->set_pixformat(s, PIXFORMAT_GRAYSCALE); }
@@ -287,13 +293,14 @@ void setup() {
   delay(100);
   WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
   if (!WiFi.softAP("ESP32-S3-CAM", "12345678"))
-    while (1) { blinkPattern(3, 100); delay(1000); }
+    blinkError(3);
 
   setupTFLite();
 
   dnsServer.start(53, "*", apIP);
   startServer();
   for (int i = 0; i < NUM_ZONES; i++) { tracks[i].active = false; tracks[i].countedIn = false; tracks[i].countedOut = false; }
+  blinkPattern(2, 150);
   digitalWrite(LED_PIN, HIGH);
 }
 
