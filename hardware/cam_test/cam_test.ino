@@ -277,13 +277,15 @@ void setup() {
   sensor_t* s = esp_camera_sensor_get();
   if (s) { s->set_framesize(s, FRAMESIZE_QQVGA); s->set_pixformat(s, PIXFORMAT_GRAYSCALE); }
 
-  setupTFLite();
-
   IPAddress apIP(192, 168, 4, 1);
+  WiFi.disconnect(true);
   WiFi.mode(WIFI_AP);
+  delay(100);
   WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
   if (!WiFi.softAP("ESP32-S3-CAM", "12345678"))
     while (1) { blinkPattern(3, 100); delay(1000); }
+
+  setupTFLite();
 
   dnsServer.start(53, "*", apIP);
   startServer();
