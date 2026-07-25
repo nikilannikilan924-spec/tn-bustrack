@@ -1,6 +1,5 @@
 #include <esp_camera.h>
 #include <WiFi.h>
-#include <WiFiClientSecure.h>
 #include <DNSServer.h>
 #include "esp_http_server.h"
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
@@ -53,19 +52,17 @@ struct Track {
   int prevY;
   int framesSinceUpdate;
   bool active;
-  bool counted;
+  bool countedIn;
+  bool countedOut;
 };
 
 Track tracks[NUM_ZONES];
 int nextTrackId = 0;
 volatile int passengers = 0;
+int totalIn = 0;
+int totalOut = 0;
 int totalFrames = 0;
 int detectFrames = 0;
-
-const char* BUS_ID = "M31";
-const char* WIFI_SSID = "SSID";
-const char* WIFI_PASS = "Nikilan31";
-const char* API_HOST = "tn-bustrack-production-4b42.up.railway.app";
 
 void blinkPattern(int n, int t) {
   for (int i = 0; i < n; i++) {
@@ -75,7 +72,6 @@ void blinkPattern(int n, int t) {
 }
 
 void startServer();
-void sendCount();
 
 static esp_err_t cam_handler(httpd_req_t* req) {
   camera_fb_t* fb = esp_camera_fb_get();
@@ -107,9 +103,10 @@ static esp_err_t cam_handler(httpd_req_t* req) {
 
 static esp_err_t status_handler(httpd_req_t* req) {
   char json[128];
-  snprintf(json, sizeof(json), "{\"p\":%d,\"f\":%d,\"d\":%d,\"ly\":%d}",
-    passengers, totalFrames, detectFrames, LINE_Y);
+  snprintf(json, sizeof(json), "{\"p\":%d,\"i\":%d,\"o\":%d,\"f\":%d,\"d\":%d,\"ly\":%d}",
+    passengers, totalIn, totalOut, totalFrames, detectFrames, LINE_Y);
   httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
   httpd_resp_send(req, json, strlen(json));
   return ESP_OK;
 }
@@ -119,13 +116,18 @@ static esp_err_t root_handler(httpd_req_t* req) {
     "<!DOCTYPE html><html><head><meta name=viewport content='width=device-width,initial-scale=1'>"
     "<style>body{margin:0;background:#111;color:#0f0;font-family:monospace;text-align:center}"
     "canvas{width:100%;max-width:320px;image-rendering:pixelated}"
-    ".count{font-size:72px;font-weight:bold;margin:10px 0;color:#0f0}"
-    ".label{color:#888;font-size:14px;margin-bottom:20px}"
+    ".net{font-size:72px;font-weight:bold;color:#0f0}"
+    ".in{color:#0f0;font-size:24px}.out{color:#f00;font-size:24px}"
+    ".label{color:#888;font-size:14px}"
     ".stat{color:#888;font-size:12px}"
     "button{background:#0f0;color:#000;border:none;padding:10px 30px;font-size:18px;border-radius:8px;margin:10px;cursor:pointer}"
     "</style></head><body>"
-    "<div class=label>Passengers</div>"
-    "<div class=count id=count>0</div>"
+    "<div class=label>NET</div>"
+    "<div class=net id=count>0</div>"
+    "<div style='display:flex;justify-content:center;gap:40px;margin:10px 0'>"
+    "<div><div class=label>IN</div><div class=in id=in>0</div></div>"
+    "<div><div class=label>OUT</div><div class=out id=out>0</div></div>"
+    "</div>"
     "<canvas id=c></canvas>"
     "<button onclick='fetch(\"/reset\")'>Reset</button>"
     "<div class=stat id=stat></div>"
@@ -141,6 +143,8 @@ static esp_err_t root_handler(httpd_req_t* req) {
     "}catch(e){}"
     "let s=await fetch('/status');let j=await s.json();"
     "document.getElementById('count').textContent=j.p;"
+    "document.getElementById('in').textContent=j.i;"
+    "document.getElementById('out').textContent=j.o;"
     "document.getElementById('stat').textContent='detect '+(j.d*100/j.f).toFixed(0)+'%'"
     "}"
     "setInterval(update,500);update()"
@@ -151,8 +155,8 @@ static esp_err_t root_handler(httpd_req_t* req) {
 }
 
 static esp_err_t reset_handler(httpd_req_t* req) {
-  passengers = 0; totalFrames = 0; detectFrames = 0; nextTrackId = 0;
-  for (int i = 0; i < NUM_ZONES; i++) { tracks[i].active = false; tracks[i].counted = false; }
+  passengers = 0; totalIn = 0; totalOut = 0; totalFrames = 0; detectFrames = 0; nextTrackId = 0;
+  for (int i = 0; i < NUM_ZONES; i++) { tracks[i].active = false; tracks[i].countedIn = false; tracks[i].countedOut = false; }
   httpd_resp_set_type(req, "application/json");
   httpd_resp_send(req, "{\"ok\":true}", 10);
   return ESP_OK;
@@ -232,41 +236,21 @@ void updateTracking(bool* det) {
     if (!tracks[z].active) {
       tracks[z].id = nextTrackId++; tracks[z].cy = cy;
       tracks[z].prevY = cy; tracks[z].framesSinceUpdate = 0;
-      tracks[z].active = true; tracks[z].counted = false;
+      tracks[z].active = true;
+      tracks[z].countedIn = false; tracks[z].countedOut = false;
     } else {
       tracks[z].prevY = tracks[z].cy; tracks[z].cy = cy;
       tracks[z].framesSinceUpdate = 0;
-      if (!tracks[z].counted && tracks[z].prevY <= LINE_Y && tracks[z].cy > LINE_Y) {
-        tracks[z].counted = true; passengers++;
+
+      if (!tracks[z].countedIn && tracks[z].prevY <= LINE_Y && tracks[z].cy > LINE_Y) {
+        tracks[z].countedIn = true; totalIn++; passengers++;
+      }
+      if (!tracks[z].countedOut && tracks[z].prevY >= LINE_Y && tracks[z].cy < LINE_Y) {
+        tracks[z].countedOut = true; totalOut++;
+        if (passengers > 0) passengers--;
       }
     }
   }
-}
-
-bool registered = false;
-
-void registerBus() {
-  WiFiClientSecure cl;
-  cl.setInsecure();
-  if (!cl.connect(API_HOST, 443)) return;
-  String body = "{\"busId\":\"" + String(BUS_ID) + "\",\"lat\":13.0827,\"lng\":80.2707,\"speed\":0,\"seats\":42,\"inside\":" + String(passengers) + ",\"route\":\"Route 31\"}";
-  cl.print("POST /api/buses/update HTTP/1.1\r\nHost: " + String(API_HOST) +
-    "\r\nContent-Type: application/json\r\nContent-Length: " + body.length() +
-    "\r\nConnection: close\r\n\r\n" + body);
-  while (cl.available()) cl.read();
-  cl.stop();
-  registered = true;
-}
-
-void sendCount() {
-  WiFiClientSecure cl;
-  cl.setInsecure();
-  if (!cl.connect(API_HOST, 443)) return;
-  String body = "{\"busId\":\"" + String(BUS_ID) + "\",\"inside\":" + String(passengers) + "}";
-  cl.print("POST /api/buses/count HTTP/1.1\r\nHost: " + String(API_HOST) +
-    "\r\nContent-Type: application/json\r\nContent-Length: " + body.length() +
-    "\r\nConnection: close\r\n\r\n" + body);
-  cl.stop();
 }
 
 void setup() {
@@ -297,16 +281,14 @@ void setup() {
   setupTFLite();
 
   IPAddress apIP(192, 168, 4, 1);
-  WiFi.mode(WIFI_AP_STA);
+  WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
   if (!WiFi.softAP("ESP32-S3-CAM", "12345678"))
     while (1) { blinkPattern(3, 100); delay(1000); }
 
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-
   dnsServer.start(53, "*", apIP);
   startServer();
-  for (int i = 0; i < NUM_ZONES; i++) { tracks[i].active = false; tracks[i].counted = false; }
+  for (int i = 0; i < NUM_ZONES; i++) { tracks[i].active = false; tracks[i].countedIn = false; tracks[i].countedOut = false; }
   digitalWrite(LED_PIN, HIGH);
 }
 
@@ -315,15 +297,9 @@ void loop() {
   totalFrames++;
 
   if (digitalRead(BUTTON_PIN) == LOW) {
-    passengers = 0;
-    for (int i = 0; i < NUM_ZONES; i++) { tracks[i].active = false; tracks[i].counted = false; }
+    passengers = 0; totalIn = 0; totalOut = 0;
+    for (int i = 0; i < NUM_ZONES; i++) { tracks[i].active = false; tracks[i].countedIn = false; tracks[i].countedOut = false; }
     nextTrackId = 0; delay(300);
-  }
-
-  static unsigned long lastSend = 0;
-  if (WiFi.status() == WL_CONNECTED) {
-    if (!registered && millis() > 3000) { registerBus(); }
-    if (millis() - lastSend > 3000) { lastSend = millis(); sendCount(); }
   }
 
   camera_fb_t* fb = esp_camera_fb_get();
