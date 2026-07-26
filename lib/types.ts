@@ -43,6 +43,7 @@ export interface Bus {
   pathIndex: number;
   speed: number;
   passengersInside: number;
+  gpsFixed: boolean;
 }
 
 export interface Alert {
@@ -105,6 +106,7 @@ export function normalizeAPIBus(raw: any, allStops: Stop[]): Bus {
     pathIndex: 0,
     speed,
     passengersInside: inside,
+    gpsFixed: raw.gpsFixed ?? false,
   };
 }
 

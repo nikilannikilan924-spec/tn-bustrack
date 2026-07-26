@@ -76,6 +76,16 @@ export default function BusDetailPage({ params }: BusPageProps) {
               'bg-[var(--text-muted)]'
             }`} />
             <p className="font-orbitron text-[10px] uppercase tracking-[0.3em] text-white/60">{t('app.name')}</p>
+            <span className="ml-auto flex items-center gap-1.5 text-[10px] text-white/70">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2a10 10 0 0110 10" opacity="0.4"/><path d="M12 6a6 6 0 016 6" opacity="0.6"/>
+                <path d="M12 22a10 10 0 01-10-10" opacity="0.4"/><path d="M12 18a6 6 0 01-6-6" opacity="0.6"/>
+                <circle cx="12" cy="12" r="2"/>
+              </svg>
+              <span className={`${bus.gpsFixed ? 'text-[#22C55E]' : 'text-[#F59E0B]'}`}>
+                {bus.gpsFixed ? 'GPS' : 'No GPS'}
+              </span>
+            </span>
           </div>
           <h1 className="mt-2 text-2xl font-bold text-white max-sm:text-xl">Bus {bus.number}</h1>
           <p className="mt-1 text-sm text-white/70">

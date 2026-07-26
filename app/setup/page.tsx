@@ -83,7 +83,7 @@ export default function SetupPage() {
       await fetch('/api/buses/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ busId: 'M31', lat: gpsLat, lng: gpsLng, speed: 0, seats: 42, inside, route: 'Route 31' })
+        body: JSON.stringify({ busId: busId, lat: gpsLat, lng: gpsLng, speed: 0, seats: 42, inside, route: 'Route 31' })
       });
     }, 3000);
     return () => clearInterval(gpsInterval);
@@ -264,7 +264,7 @@ export default function SetupPage() {
             <p className="text-[10px] text-[var(--text-secondary)]">
               {gpsOn
                 ? `${gpsLat.toFixed(6)}, ${gpsLng.toFixed(6)} ${lang === 'ta' ? '— ஒவ்வொரு 3 வினாடிக்கும் அனுப்புகிறது' : '— sending every 3s'}`
-                : lang === 'ta' ? 'உங்கள் தொலைபேசியின் GPS ஐ M31 ஆக அனுப்ப தொடங்கு என்பதைத் தட்டவும்' : 'Tap Start to send your phone GPS as M31'}
+                : lang === 'ta' ? 'உங்கள் தொலைபேசியின் GPS ஐ அனுப்ப தொடங்கு என்பதைத் தட்டவும்' : 'Tap Start to send your phone GPS to this bus'}
             </p>
           </div>
         </div>

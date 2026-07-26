@@ -18,6 +18,7 @@ interface LiveBus {
   seatsAvailable: number;
   seatCapacity: number;
   inside: number;
+  gpsFixed: boolean;
 }
 
 function normalize(raw: any): LiveBus {
@@ -33,6 +34,7 @@ function normalize(raw: any): LiveBus {
     seatsAvailable: raw.seats ?? raw.seatsAvailable ?? 0,
     seatCapacity: raw.seatCapacity ?? raw.totalSeats ?? 42,
     inside: raw.inside ?? raw.passengersInside ?? 0,
+    gpsFixed: raw.gpsFixed ?? false,
   };
 }
 
@@ -120,6 +122,14 @@ export function BusesBoard() {
               <div className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-[#22C55E]" />
                 <span className="text-xs font-semibold text-[var(--text-secondary)]">{bus.number}</span>
+                <span className={`ml-auto flex items-center gap-1 text-[9px] ${bus.gpsFixed ? 'text-[#22C55E]' : 'text-[#F59E0B]'}`}>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2a10 10 0 0110 10" opacity="0.4"/><path d="M12 6a6 6 0 016 6" opacity="0.6"/>
+                    <path d="M12 22a10 10 0 01-10-10" opacity="0.4"/><path d="M12 18a6 6 0 01-6-6" opacity="0.6"/>
+                    <circle cx="12" cy="12" r="2"/>
+                  </svg>
+                  {bus.gpsFixed ? 'GPS' : 'No GPS'}
+                </span>
               </div>
               <p className="mt-1 text-sm font-medium text-[var(--text-primary)]">{bus.routeName}</p>
               <div className="mt-3 grid grid-cols-3 gap-3">
