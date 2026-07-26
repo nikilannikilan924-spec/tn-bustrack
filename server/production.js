@@ -6,6 +6,7 @@ const https = require('https');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const mqtt = require('mqtt');
 const cors = require('cors');
 const next = require('next');
 
@@ -457,8 +458,11 @@ app.post('/api/bus/create', (req, res) => {
 });
 
 // Load deleted buses from env var (survives deploy)
+// Only add to deletedBuses if the bus has no active config
 if (process.env.DELETED_BUSES) {
-  process.env.DELETED_BUSES.split(',').map(s => s.trim()).filter(Boolean).forEach(id => deletedBuses.add(id));
+  process.env.DELETED_BUSES.split(',').map(s => s.trim()).filter(Boolean).forEach(id => {
+    if (!busConfigs[id]) deletedBuses.add(id);
+  });
 }
 
 if (deletedBuses.size > 0) {
@@ -611,6 +615,37 @@ app.get('/health', (req, res) => {
 });
 
 
+
+// ── MQTT SUBSCRIPTION (ESP32 count via broker) ────────────────
+const mqttClient = mqtt.connect('mqtt://broker.emqx.io:1883');
+mqttClient.on('connect', () => {
+  console.log('MQTT connected');
+  mqttClient.subscribe('tnbustrack/+/count', { qos: 0 });
+});
+mqttClient.on('message', (topic, buf) => {
+  try {
+    const msg = JSON.parse(buf.toString());
+    const { busId, inside } = msg;
+    if (!busId || inside == null) return;
+    const pInside = Number(inside);
+    if (!busPositions[busId]) {
+      busPositions[busId] = {
+        busId, routeId: busId, totalSeats: 42,
+        lat: 13.0827, lng: 80.2707, speed: 0, seats: 42 - pInside,
+        inside: pInside, route: busId, busNumber: busId,
+        gpsFixed: false, currentStop: '', area: '', road: '', city: '',
+        distFromStop: '0.00', nextStops: [],
+        lastUpdate: new Date().toISOString()
+      };
+    } else {
+      busPositions[busId].inside = pInside;
+      busPositions[busId].seats = (busConfigs[busId]?.totalSeats || 42) - pInside;
+    }
+    io.to(`bus-${busId}`).emit('countUpdate', { busId, inside: pInside });
+    io.to('all-buses').emit('countUpdate', { busId, inside: pInside });
+  } catch (_) {}
+});
+mqttClient.on('error', e => console.error('MQTT error:', e.message));
 
 // ── STALE BUS CLEANUP (every 15s, remove buses offline >120s) ─
 // 120s allows ESP32 brownout reboot + WiFi reconnect time
