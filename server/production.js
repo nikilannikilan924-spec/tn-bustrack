@@ -32,6 +32,7 @@ global.__busPositions = busPositions;
 let busConfigs = {};
 let gpsHistory = {};
 let deletedBuses = new Set();
+let passedStops = {}; // busId -> Set of stop names passed
 
 // ── CONFIG PERSISTENCE ─────────────────────────────────────
 function ensureDataDir() {
@@ -47,6 +48,11 @@ function loadConfigs() {
       if (data.busConfigs) busConfigs = data.busConfigs;
       if (data.deletedBuses && Array.isArray(data.deletedBuses)) {
         data.deletedBuses.forEach(id => deletedBuses.add(id));
+      }
+      if (data.passedStops) {
+        for (const [k, v] of Object.entries(data.passedStops)) {
+          passedStops[k] = new Set(v);
+        }
       }
       if (data.busPositions) {
         Object.assign(busPositions, data.busPositions);
@@ -109,7 +115,9 @@ function loadConfigs() {
 function saveConfigs() {
   try {
     ensureDataDir();
-    const data = { busConfigs, deletedBuses: [...deletedBuses], busPositions };
+    const passed = {};
+    for (const [k, v] of Object.entries(passedStops)) passed[k] = [...v];
+    const data = { busConfigs, deletedBuses: [...deletedBuses], busPositions, passedStops: passed };
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2));
   } catch (e) { console.error('Failed to save configs:', e.message); }
 }
@@ -171,29 +179,32 @@ function getDistanceKm(lat1, lng1, lat2, lng2) {
 
 const STOPS = {};
 
-function getNearestStop(lat, lng, routeKey, customStops) {
+function getNearestStop(lat, lng, routeKey, customStops, busId) {
   const stops = customStops || STOPS[routeKey];
   if (!stops || stops.length === 0) {
     return { stop: { name: '', lat, lng }, distKm: 0 };
   }
+  const passed = passedStops[busId] || new Set();
   let nearest = stops[0];
   let minDist = Infinity;
   stops.forEach(stop => {
+    if (passed.has(stop.name)) return;
     const d = getDistanceKm(lat, lng, stop.lat, stop.lng);
     if (d < minDist) { minDist = d; nearest = stop; }
   });
   return { stop: nearest, distKm: minDist };
 }
 
-function getNextStops(currentStopName, routeKey, busLat, busLng, customStops) {
+function getNextStops(currentStopName, routeKey, busLat, busLng, customStops, speedKmh) {
   const stops = customStops || STOPS[routeKey];
   if (!stops || stops.length === 0) return [];
   if (!currentStopName || currentStopName === 'Unknown') return [];
   const curIdx = stops.findIndex(s => s.name === currentStopName);
   if (curIdx === -1) return [];
+  const avgSpeed = (speedKmh && speedKmh > 5) ? speedKmh : 40;
   return stops.slice(curIdx + 1).map(stop => {
     const distKm = getDistanceKm(busLat, busLng, stop.lat, stop.lng);
-    const etaMin = Math.round((distKm / 40) * 60);
+    const etaMin = Math.round((distKm / avgSpeed) * 60);
     return { name: stop.name, distKm: distKm.toFixed(1), etaMin };
   });
 }
@@ -232,8 +243,17 @@ app.post('/api/buses/update', (req, res) => {
     }
   }
 
-  const { stop, distKm } = getNearestStop(lat, lng, routeKey, customStops);
-  const nextStops = getNextStops(stop.name, routeKey, lat, lng, customStops);
+  const { stop, distKm } = getNearestStop(lat, lng, routeKey, customStops, busId);
+  // Auto-advance: if within 300m of a stop and moving away, mark it passed
+  const stops = customStops || STOPS[routeKey];
+  if (stops && stops.length > 0 && distKm < 0.3 && prev && stop.name) {
+    const prevDist = getDistanceKm(prev.lat, prev.lng, stop.lat, stop.lng);
+    if (prevDist < distKm) { // moving away from this stop
+      if (!passedStops[busId]) passedStops[busId] = new Set();
+      passedStops[busId].add(stop.name);
+    }
+  }
+  const nextStops = getNextStops(stop.name, routeKey, lat, lng, customStops, speed);
 
   const routeId = cfg.routeKey || busId;
   const totalSeats = cfg.totalSeats || 42;
@@ -501,7 +521,7 @@ app.post('/api/bus/location', (req, res) => {
   const routeKey = cfg.routeKey || 'namakkal-salem';
   const customStops = cfg.stops;
   const { stop, distKm } = getNearestStop(Number(latitude), Number(longitude), routeKey, customStops);
-  const nextStops = getNextStops(stop.name, routeKey, Number(latitude), Number(longitude), customStops);
+  const nextStops = getNextStops(stop.name, routeKey, Number(latitude), Number(longitude), customStops, speed);
   const totalSeats = cfg.totalSeats || 42;
   const busData = {
     busId,
