@@ -252,26 +252,7 @@ export default function SetupPage() {
         <p className="mt-2 text-sm text-[var(--text-secondary)]">{getVal('setup.subtitle')}</p>
       </div>
 
-      <div className="rounded-3xl border-2 border-[#0EA5E9]/30 bg-[#0EA5E9]/5 p-6 shadow-lg backdrop-blur-xl sm:p-8">
-        <div className="flex items-center gap-3 mb-4">
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0EA5E9]/20">
-            <span className={`h-3 w-3 rounded-full ${gpsOn ? 'bg-[#22C55E] shadow-[0_0_12px_rgba(34,197,94,0.6)] animate-pulse' : 'bg-[#F59E0B]'}`} />
-          </span>
-          <div>
-            <p className="text-sm font-semibold text-[var(--text-primary)]">
-              {lang === 'ta' ? 'GPS இருப்பிட அனுப்பி' : 'GPS Location Sender'}
-            </p>
-            <p className="text-[10px] text-[var(--text-secondary)]">
-              {gpsOn
-                ? `${gpsLat.toFixed(6)}, ${gpsLng.toFixed(6)} ${lang === 'ta' ? '— ஒவ்வொரு 3 வினாடிக்கும் அனுப்புகிறது' : '— sending every 3s'}`
-                : lang === 'ta' ? 'உங்கள் தொலைபேசியின் GPS ஐ அனுப்ப தொடங்கு என்பதைத் தட்டவும்' : 'Tap Start to send your phone GPS to this bus'}
-            </p>
-          </div>
-        </div>
-        <button onClick={gpsToggle} className={`rounded-xl px-6 py-3 text-sm font-bold transition ${gpsOn ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-[#0EA5E9] text-white hover:bg-[#0284C7]'}`}>
-          {gpsOn ? (lang === 'ta' ? 'நிறுத்து' : 'Stop') : (lang === 'ta' ? 'GPS தொடங்கு' : 'Start GPS')}
-        </button>
-      </div>
+
 
       {liveBuses.length > 0 && (
         <div className="rounded-3xl border border-[#22C55E]/30 bg-[#22C55E]/5 p-6 shadow-lg backdrop-blur-xl sm:p-8">

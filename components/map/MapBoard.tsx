@@ -130,7 +130,7 @@ export function MapBoard() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              busId: 'M31',
+              busId: 'M31B',
               lat: pos.coords.latitude,
               lng: pos.coords.longitude,
               speed: pos.coords.speed || 0,
