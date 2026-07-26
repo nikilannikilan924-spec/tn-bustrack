@@ -201,7 +201,7 @@ function getNextStops(currentStopName, routeKey, busLat, busLng, customStops, sp
   if (!currentStopName || currentStopName === 'Unknown') return [];
   const curIdx = stops.findIndex(s => s.name === currentStopName);
   if (curIdx === -1) return [];
-  const avgSpeed = (speedKmh && speedKmh > 5) ? speedKmh : 40;
+  const avgSpeed = (speedKmh && speedKmh > 10) ? speedKmh : 30;
   return stops.slice(curIdx + 1).map(stop => {
     const distKm = getDistanceKm(busLat, busLng, stop.lat, stop.lng);
     const etaMin = Math.round((distKm / avgSpeed) * 60);
