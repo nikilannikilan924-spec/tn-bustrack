@@ -280,11 +280,15 @@ app.post('/api/buses/count', (req, res) => {
   let { busId, inside } = req.body;
   if (busId) busId = busId.trim();
   if (!busId) return res.status(400).json({ error: 'busId required' });
-  if (deletedBuses.has(busId)) return res.status(403).json({ error: 'Bus deleted' });
+  // Auto-undelete if someone is reporting data for this bus
+  deletedBuses.delete(busId);
 
   const pInside = inside ?? 0;
+  if (!busConfigs[busId]) {
+    busConfigs[busId] = { busId, totalSeats: 42, routeName: '', routeKey: busId, driverName: '', busNumber: busId, stops: [], updatedAt: new Date().toISOString() };
+  }
   if (!busPositions[busId]) {
-    const cfg = busConfigs[busId] || {};
+    const cfg = busConfigs[busId];
     const stops = cfg.stops || [];
     busPositions[busId] = {
       busId, routeId: cfg.routeKey || busId, totalSeats: cfg.totalSeats || 42,
@@ -295,7 +299,7 @@ app.post('/api/buses/count', (req, res) => {
       lastUpdate: new Date().toISOString()
     };
   } else {
-    const cfg = busConfigs[busId] || {};
+    const cfg = busConfigs[busId];
     const totalSeats = cfg.totalSeats || 42;
     busPositions[busId].inside = pInside;
     busPositions[busId].seats = totalSeats - pInside;
