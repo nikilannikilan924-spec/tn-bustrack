@@ -126,7 +126,7 @@ export function MapBoard() {
     watchIdRef.current = navigator.geolocation.watchPosition(
       async (pos) => {
         try {
-          await fetch('/api/buses/update', {
+          const r = await fetch('/api/buses/update', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -137,7 +137,11 @@ export function MapBoard() {
               gpsFixed: true
             })
           });
-        } catch {}
+          if (!r.ok) setPhoneGpsStatus(`API error: ${r.status}`);
+          else setPhoneGpsStatus('GPS tracking active');
+        } catch (e: any) {
+          setPhoneGpsStatus(`Fetch error: ${e?.message || 'unknown'}`);
+        }
       },
       (err) => {
         setPhoneGpsStatus(`Error: ${err.message}`);
