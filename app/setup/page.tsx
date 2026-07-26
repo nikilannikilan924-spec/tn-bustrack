@@ -83,7 +83,7 @@ export default function SetupPage() {
       await fetch('/api/buses/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ busId: busId, lat: gpsLat, lng: gpsLng, speed: 0, seats: 42, inside, route: 'Route 31' })
+        body: JSON.stringify({ busId: busId, lat: gpsLat, lng: gpsLng, speed: 0, seats: 42, inside, gpsFixed: true, route: 'Route 31' })
       });
     }, 3000);
     return () => clearInterval(gpsInterval);

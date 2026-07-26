@@ -207,7 +207,7 @@ app.post('/api/buses/update', (req, res) => {
   let { busId, lat, lng, speed, seats, inside, route, gpsFixed } = req.body;
   if (busId) busId = busId.trim();
   if (!busId) return res.status(400).json({ error: 'busId required' });
-  if (deletedBuses.has(busId)) return res.status(403).json({ error: 'Bus deleted' });
+  deletedBuses.delete(busId);
 
   const prev = busPositions[busId];
   const validCoord = lat && lng && Math.abs(lat) > 0.01 && Math.abs(lng) > 0.01;
