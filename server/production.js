@@ -126,6 +126,28 @@ function saveConfigs() {
 function deg2rad(deg) { return deg * (Math.PI / 180); }
 
 const GEO_CACHE = {};
+const ROAD_DIST_CACHE = {};
+
+function getRoadDistance(lat1, lng1, lat2, lng2) {
+  const key = `${lat1.toFixed(4)},${lng1.toFixed(4)}-${lat2.toFixed(4)},${lng2.toFixed(4)}`;
+  if (ROAD_DIST_CACHE[key]) return ROAD_DIST_CACHE[key];
+  const url = `https://router.project-osrm.org/route/v1/driving/${lng1},${lat1};${lng2},${lat2}?overview=false`;
+  const req = https.get(url, { headers: { 'User-Agent': 'TN-BusTrack/1.0' }, timeout: 3000 }, (res) => {
+    let data = '';
+    res.on('data', c => data += c);
+    res.on('end', () => {
+      try {
+        const j = JSON.parse(data);
+        if (j.code === 'Ok' && j.routes?.[0]) {
+          ROAD_DIST_CACHE[key] = { distKm: j.routes[0].distance / 1000, durationMin: j.routes[0].duration / 60 };
+        }
+      } catch (_) {}
+    });
+  });
+  req.on('error', () => {});
+  req.setTimeout(3000, () => req.destroy());
+  return null;
+}
 
 function reverseGeocode(lat, lng, busId) {
   const key = `${lat.toFixed(3)},${lng.toFixed(3)}`;
@@ -195,6 +217,14 @@ function getNearestStop(lat, lng, routeKey, customStops, busId) {
   return { stop: nearest, distKm: minDist };
 }
 
+function precalcRoadDistances(stops) {
+  if (!stops || stops.length < 2) return;
+  for (let i = 0; i < stops.length - 1; i++) {
+    const a = stops[i], b = stops[i + 1];
+    getRoadDistance(a.lat, a.lng, b.lat, b.lng);
+  }
+}
+
 function getNextStops(currentStopName, routeKey, busLat, busLng, customStops, speedKmh) {
   const stops = customStops || STOPS[routeKey];
   if (!stops || stops.length === 0) return [];
@@ -202,9 +232,21 @@ function getNextStops(currentStopName, routeKey, busLat, busLng, customStops, sp
   const curIdx = stops.findIndex(s => s.name === currentStopName);
   if (curIdx === -1) return [];
   const avgSpeed = (speedKmh && speedKmh > 10) ? speedKmh : 30;
+  let cumulativeRoadKm = 0;
   return stops.slice(curIdx + 1).map(stop => {
-    const distKm = getDistanceKm(busLat, busLng, stop.lat, stop.lng);
-    const etaMin = Math.round((distKm / avgSpeed) * 60);
+    const prevStop = stops[curIdx + stops.slice(curIdx + 1).indexOf(stop)];
+    const prevIdx = stops.indexOf(prevStop);
+    let distKm;
+    if (prevIdx >= 0) {
+      const cached = ROAD_DIST_CACHE[`${stops[prevIdx].lat.toFixed(4)},${stops[prevIdx].lng.toFixed(4)}-${stop.lat.toFixed(4)},${stop.lng.toFixed(4)}`];
+      if (cached) { cumulativeRoadKm += cached.distKm; distKm = cumulativeRoadKm; }
+      else { const raw = getDistanceKm(busLat, busLng, stop.lat, stop.lng); distKm = raw * 1.4; }
+    } else {
+      const raw = getDistanceKm(busLat, busLng, stop.lat, stop.lng);
+      distKm = raw * 1.4;
+    }
+    distKm = Math.round(distKm * 10) / 10;
+    const etaMin = Math.max(1, Math.round((distKm / avgSpeed) * 60));
     return { name: stop.name, distKm: distKm.toFixed(1), etaMin };
   });
 }
@@ -274,7 +316,7 @@ app.post('/api/buses/update', (req, res) => {
     area: prev?.area || '',
     road: prev?.road || '',
     city: prev?.city || '',
-    distFromStop: distKm.toFixed(2),
+    distFromStop: (distKm * 1.4).toFixed(2),
     nextStops,
     lastUpdate: new Date().toISOString(),
   };
@@ -447,8 +489,10 @@ app.post('/api/bus/create', (req, res) => {
     stops: bus.stops || [],
     updatedAt: new Date().toISOString()
   };
+  // Pre-calculate road distances between stops
+  precalcRoadDistances(stops);
   // Re-activate bus on map immediately so it doesn't blink
-  const stops = busConfigs[busId].stops || [];
+
   const firstStop = stops.length > 0 ? stops[0] : null;
   const posLat = bus.latitude ?? (firstStop ? firstStop.lat : 11.3);
   const posLng = bus.longitude ?? (firstStop ? firstStop.lng : 78.1);
