@@ -58,6 +58,8 @@ function loadConfigs() {
         Object.assign(busPositions, data.busPositions);
         console.log(`Restored ${Object.keys(data.busPositions).length} bus position(s) from file`);
       }
+      delete busConfigs['M31B'];
+      delete busPositions['M31B'];
       count = Object.keys(busConfigs).length;
       Object.keys(busConfigs).forEach(id => {
         deletedBuses.delete(id);
