@@ -489,10 +489,9 @@ app.post('/api/bus/create', (req, res) => {
     stops: bus.stops || [],
     updatedAt: new Date().toISOString()
   };
-  // Pre-calculate road distances between stops
-  precalcRoadDistances(stops);
   // Re-activate bus on map immediately so it doesn't blink
-
+  const stops = busConfigs[busId].stops || [];
+  precalcRoadDistances(stops);
   const firstStop = stops.length > 0 ? stops[0] : null;
   const posLat = bus.latitude ?? (firstStop ? firstStop.lat : 11.3);
   const posLng = bus.longitude ?? (firstStop ? firstStop.lng : 78.1);

@@ -9,14 +9,14 @@
 #include <Preferences.h>
 #include <HTTPClient.h>
 
-String busId = "M31B";
+String busId = "M31";
 
 const char* FALLBACK_SSID = "SSID";
 const char* FALLBACK_PASS = "Nikilan31";
 
-const char* GPS_URL    = "https://tn-bustrack-production-4b42.up.railway.app/api/buses/update";
-const char* COUNT_URL  = "https://tn-bustrack-production-4b42.up.railway.app/api/buses/count";
-const char* CONFIG_URL = "https://tn-bustrack-production-4b42.up.railway.app/api/config/";
+const char* GPS_URL    = "https://tn-bustrack-production.up.railway.app/api/buses/update";
+const char* COUNT_URL  = "https://tn-bustrack-production.up.railway.app/api/buses/count";
+const char* CONFIG_URL = "https://tn-bustrack-production.up.railway.app/api/config/";
 
 #define GPS_RX 16
 #define GPS_TX 17
@@ -82,7 +82,7 @@ bool loadWifiCreds(String& ssid, String& pass, String& id) {
   prefs.begin("tn-bustrack", true);
   ssid = prefs.getString("ssid", "");
   pass = prefs.getString("pass", "");
-  id = prefs.getString("busid", "M31B");
+  id = prefs.getString("busid", "M31");
   prefs.end();
   return ssid.length() > 0;
 }
@@ -105,7 +105,7 @@ String portalHtml() {
     "<p style='text-align:left;font-size:14px;color:#64748b;margin:8px 0 4px'>WiFi Password</p>"
     "<input type='password' name='pass' placeholder='Enter WiFi password'>"
     "<p style='text-align:left;font-size:14px;color:#64748b;margin:8px 0 4px'>Bus ID (from /setup page)</p>"
-    "<input name='busid' value='M31B' placeholder='e.g. M31B'>"
+    "<input name='busid' value='M31' placeholder='e.g. M31'>"
     "<button type='submit'>Connect</button>"
     "</form>"
     "<p class='status'>ESP32 will reboot and connect to your WiFi</p>"
@@ -120,7 +120,7 @@ void handlePortalSave() {
   if (portalServer.hasArg("ssid")) {
     String portalSSID = portalServer.arg("ssid");
     String portalPass = portalServer.hasArg("pass") ? portalServer.arg("pass") : "";
-    String id = portalServer.hasArg("busid") ? portalServer.arg("busid") : "M31B";
+    String id = portalServer.hasArg("busid") ? portalServer.arg("busid") : "M31";
     id.trim();
     saveWifiCreds(portalSSID, portalPass, id);
     portalServer.send(200, "text/html",
@@ -413,21 +413,7 @@ void sendCount() {
 
 void setup() {
   Serial.begin(115200);
-  gps.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
-  Serial.println("GPS: trying 9600 baud (NEO-6M default)...");
-  delay(100);
-  // If no data after 3s, try 115200
-  unsigned long gpsCheckStart = millis();
-  while (millis() - gpsCheckStart < 3000) {
-    if (gps.available()) break;
-    delay(10);
-  }
-  if (!gps.available()) {
-    gps.begin(115200, SERIAL_8N1, GPS_RX, GPS_TX);
-    Serial.println("GPS: switched to 115200 baud");
-  } else {
-    Serial.println("GPS: 9600 baud working");
-  }
+  gps.begin(115200, SERIAL_8N1, GPS_RX, GPS_TX);
   pinMode(TRIG_A, OUTPUT);
   pinMode(ECHO_A, INPUT);
   pinMode(TRIG_B, OUTPUT);

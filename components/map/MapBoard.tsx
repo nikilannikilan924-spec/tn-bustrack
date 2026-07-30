@@ -8,6 +8,9 @@ import { Input } from '@/components/ui/Input';
 import { useLanguage } from '@/lib/LanguageContext';
 import { haversineKm, formatKm } from '@/lib/distance';
 
+let globalWatchId: number | null = null;
+let globalTrackingActive = false;
+
 type BusStatus = 'running' | 'delayed' | 'stopped';
 
 interface LiveBus {
@@ -90,8 +93,8 @@ export function MapBoard() {
     });
 
     return () => {
+      mountedRef.current = false;
       unsub1(); unsub2(); unsub3();
-      if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
     };
   }, []);
 
@@ -113,8 +116,15 @@ export function MapBoard() {
   const selectedBus = filteredBuses.find(b => b.id === selectedBusId) || null;
 
   const [phoneGpsStatus, setPhoneGpsStatus] = useState<string | null>(null);
-  const [tracking, setTracking] = useState(false);
-  const watchIdRef = useRef<number | null>(null);
+  const [tracking, setTracking] = useState(globalTrackingActive);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    if (globalWatchId !== null) {
+      setTracking(true);
+      setPhoneGpsStatus('GPS tracking active');
+    }
+  }, []);
 
   function startPhoneTracking() {
     if (!navigator.geolocation) {
@@ -123,14 +133,16 @@ export function MapBoard() {
     }
     setPhoneGpsStatus('Tracking started...');
     setTracking(true);
-    watchIdRef.current = navigator.geolocation.watchPosition(
+    globalTrackingActive = true;
+    globalWatchId = navigator.geolocation.watchPosition(
       async (pos) => {
+        if (!mountedRef.current) return;
         try {
           const r = await fetch('/api/buses/update', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              busId: 'M31B',
+              busId: 'M31',
               lat: pos.coords.latitude,
               lng: pos.coords.longitude,
               speed: pos.coords.speed || 0,
@@ -144,6 +156,7 @@ export function MapBoard() {
         }
       },
       (err) => {
+        if (!mountedRef.current) return;
         setPhoneGpsStatus(`Error: ${err.message}`);
       },
       { enableHighAccuracy: true, maximumAge: 2000, timeout: 5000 }
@@ -151,10 +164,11 @@ export function MapBoard() {
   }
 
   function stopPhoneTracking() {
-    if (watchIdRef.current !== null) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
-      watchIdRef.current = null;
+    if (globalWatchId !== null) {
+      navigator.geolocation.clearWatch(globalWatchId);
+      globalWatchId = null;
     }
+    globalTrackingActive = false;
     setTracking(false);
     setPhoneGpsStatus('Tracking stopped');
     setTimeout(() => setPhoneGpsStatus(null), 2000);
