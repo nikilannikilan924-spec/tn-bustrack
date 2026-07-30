@@ -60,6 +60,7 @@ function loadConfigs() {
       }
       delete busConfigs['M31B'];
       delete busPositions['M31B'];
+      deletedBuses.add('M31B');
       count = Object.keys(busConfigs).length;
       Object.keys(busConfigs).forEach(id => {
         deletedBuses.delete(id);
@@ -340,10 +341,12 @@ app.post('/api/buses/update', (req, res) => {
 });
 
 // ── ESP32 SENDS COUNT UPDATE ────────────────────────────────
+const BLOCKED_BUSES = new Set(['M31B']);
 app.post('/api/buses/count', (req, res) => {
   let { busId, inside } = req.body;
   if (busId) busId = busId.trim();
   if (!busId) return res.status(400).json({ error: 'busId required' });
+  if (BLOCKED_BUSES.has(busId)) return res.status(403).json({ error: 'Bus is blocked' });
   // Auto-undelete if someone is reporting data for this bus
   deletedBuses.delete(busId);
 
@@ -561,7 +564,7 @@ app.post('/api/bus/location', (req, res) => {
   if (!busId || latitude == null || longitude == null) {
     return res.status(400).json({ error: 'busId, latitude, longitude required' });
   }
-  if (deletedBuses.has(busId)) return res.status(403).json({ error: 'Bus deleted' });
+  if (deletedBuses.has(busId) || BLOCKED_BUSES.has(busId)) return res.status(403).json({ error: 'Bus deleted' });
   const cfg = busConfigs[busId] || {};
   const routeKey = cfg.routeKey || 'namakkal-salem';
   const customStops = cfg.stops;
@@ -594,6 +597,7 @@ app.post('/api/bus/passengers', (req, res) => {
   let { busId, passengersInside } = req.body;
   if (busId) busId = busId.trim();
   if (!busId || passengersInside == null) return res.status(400).json({ error: 'busId, passengersInside required' });
+  if (BLOCKED_BUSES.has(busId)) return res.status(403).json({ error: 'Bus is blocked' });
   if (busPositions[busId]) {
     busPositions[busId].inside = passengersInside;
     busPositions[busId].seats = (busConfigs[busId]?.totalSeats || 42) - passengersInside;
@@ -696,6 +700,7 @@ mqttClient.on('message', (topic, buf) => {
     const msg = JSON.parse(buf.toString());
     const { busId, inside } = msg;
     if (!busId || inside == null) return;
+    if (BLOCKED_BUSES.has(busId)) return;
     const pInside = Number(inside);
     if (!busPositions[busId]) {
       busPositions[busId] = {
