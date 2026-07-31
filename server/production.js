@@ -370,6 +370,7 @@ app.post('/api/buses/count', (req, res) => {
     const totalSeats = cfg.totalSeats || 42;
     busPositions[busId].inside = pInside;
     busPositions[busId].seats = totalSeats - pInside;
+    busPositions[busId].lastUpdate = new Date().toISOString();
   }
 
   io.to(`bus-${busId}`).emit('countUpdate', { busId, inside: pInside });
