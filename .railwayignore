@@ -1,0 +1,6 @@
+node_modules
+.next
+.git
+hardware/**/build/
+nul
+tsconfig.tsbuildinfo

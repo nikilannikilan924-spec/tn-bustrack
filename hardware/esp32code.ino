@@ -14,9 +14,9 @@ String busId = "M31B";
 const char* FALLBACK_SSID = "SSID";
 const char* FALLBACK_PASS = "Nikilan31";
 
-const char* GPS_URL    = "https://tn-bustrack-production-4b42.up.railway.app/api/buses/update";
-const char* COUNT_URL  = "https://tn-bustrack-production-4b42.up.railway.app/api/buses/count";
-const char* CONFIG_URL = "https://tn-bustrack-production-4b42.up.railway.app/api/config/";
+const char* GPS_URL    = "https://tn-bustrack-production-da58.up.railway.app/api/buses/update";
+const char* COUNT_URL  = "https://tn-bustrack-production-da58.up.railway.app/api/buses/count";
+const char* CONFIG_URL = "https://tn-bustrack-production-da58.up.railway.app/api/config/";
 
 #define GPS_RX 16
 #define GPS_TX 17

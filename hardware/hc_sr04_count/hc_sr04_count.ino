@@ -11,7 +11,7 @@
 const char* SSID = "SSID";
 const char* PASS = "Nikilan31";
 const char* BUS_ID = "M31";
-const char* HOST = "tn-bustrack-production-4b42.up.railway.app";
+const char* HOST = "tn-bustrack-production-da58.up.railway.app";
 
 WiFiClientSecure client;
 int passengers = 0, state = 0;
@@ -35,11 +35,13 @@ long readDist(int trig, int echo) {
 bool triggered(long d) { return d > 5 && d < 35; }
 
 void sendCount() {
-  if (WiFi.status() != WL_CONNECTED) return;
+  if (WiFi.status() != WL_CONNECTED) { Serial.println("WiFi not connected"); return; }
   HTTPClient http;
-  http.begin("https://" + String(HOST) + "/api/buses/count");
+  http.begin(client, "https://" + String(HOST) + "/api/buses/count");
   http.addHeader("Content-Type", "application/json");
-  http.POST("{\"busId\":\"" + String(BUS_ID) + "\",\"inside\":" + String(passengers) + "}");
+  int code = http.POST("{\"busId\":\"" + String(BUS_ID) + "\",\"inside\":" + String(passengers) + "}");
+  Serial.print("POST /api/buses/count -> ");
+  Serial.println(code);
   http.end();
 }
 
@@ -48,13 +50,23 @@ void setup() {
   pinMode(TRIG_A, OUTPUT); pinMode(ECHO_A, INPUT);
   pinMode(TRIG_B, OUTPUT); pinMode(ECHO_B, INPUT);
   pinMode(LED, OUTPUT); digitalWrite(LED, LOW);
+  Serial.print("Connecting to WiFi ");
   WiFi.mode(WIFI_STA); WiFi.begin(SSID, PASS);
   for (int i = 0; i < 30; i++) {
     if (WiFi.status() == WL_CONNECTED) break;
+    Serial.print(".");
     delay(500);
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println(" OK");
+    Serial.print("IP: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println(" FAIL");
   }
   digitalWrite(LED, HIGH);
   client.setInsecure();
+  Serial.println("Setup done");
 }
 
 void loop() {
@@ -81,11 +93,11 @@ void loop() {
     if (aOK && !bOK) state = 1;
     else if (bOK && !aOK) state = 2;
   } else if (state == 1 && bOK) {
-    passengers++; Serial.println(passengers);
+    passengers++; Serial.print("IN "); Serial.println(passengers);
     sendCount(); lastSend = now; state = 0; aAt = 0; bAt = 0;
   } else if (state == 2 && aOK) {
     passengers--; if (passengers < 0) passengers = 0;
-    Serial.println(passengers);
+    Serial.print("OUT "); Serial.println(passengers);
     sendCount(); lastSend = now; state = 0; aAt = 0; bAt = 0;
   } else if (state > 0 && !aOK && !bOK) {
     state = 0; aAt = 0; bAt = 0;

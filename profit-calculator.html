@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TN BusTrack — Profit Calculator</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; display: flex; justify-content: center; padding: 30px 16px; }
+  .card { background: #1e293b; border-radius: 16px; padding: 28px; max-width: 720px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
+  h1 { font-size: 22px; color: #38bdf8; margin-bottom: 6px; }
+  .sub { color: #94a3b8; font-size: 13px; margin-bottom: 24px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .field { background: #0f172a; padding: 14px; border-radius: 10px; }
+  .field label { font-size: 12px; color: #94a3b8; display: block; margin-bottom: 6px; }
+  .field input, .field select { width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; border-radius: 6px; padding: 8px 10px; font-size: 15px; }
+  input[type=range] { width: 100%; accent-color: #38bdf8; margin-top: 6px; }
+  .range-label { font-size: 15px; color: #38bdf8; font-weight: 600; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
+  .stat { background: #0f172a; border-radius: 10px; padding: 16px; text-align: center; border: 1px solid #334155; }
+  .stat .v { font-size: 20px; font-weight: 700; color: #4ade80; }
+  .stat .v.red { color: #f87171; }
+  .stat .v.blue { color: #38bdf8; }
+  .stat .l { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+  .breakdown { background: #0f172a; border-radius: 10px; padding: 16px; }
+  .breakdown h3 { font-size: 13px; color: #94a3b8; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #1e293b; font-size: 14px; }
+  .row:last-child { border-bottom: none; }
+  .row .lab { color: #94a3b8; }
+  .row .val { color: #e2e8f0; font-weight: 600; }
+  .row.total .val { color: #4ade80; font-size: 16px; }
+  .gov { background: #082f49; border: 1px solid #0e7490; border-radius: 10px; padding: 16px; margin-top: 20px; }
+  .gov h3 { font-size: 13px; color: #67e8f9; margin-bottom: 10px; text-transform: uppercase; }
+  .note { font-size: 12px; color: #64748b; margin-top: 20px; line-height: 1.5; }
+  @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } .stats { grid-template-columns: 1fr 1fr 1fr; } }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🚌 TN BusTrack — Profit Calculator</h1>
+  <div class="sub">SaaS model: you charge per bus per month. Adjust inputs → see your profit & government savings.</div>
+
+  <div class="field" style="margin-bottom:16px;">
+    <label>Number of buses: <span class="range-label" id="busVal">50</span></label>
+    <input type="range" id="buses" min="1" max="20000" step="1" value="50" oninput="calc()">
+  </div>
+
+  <div class="grid">
+    <div class="field">
+      <label>Your price (₹/bus/month)</label>
+      <input type="number" id="price" value="200" oninput="calc()">
+    </div>
+    <div class="field">
+      <label>Your cost (₹/bus/month — SIM + server + maintenance)</label>
+      <input type="number" id="cost" value="140" oninput="calc()">
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="v blue" id="rev">₹1.00 L</div><div class="l">Your Monthly Revenue</div></div>
+    <div class="stat"><div class="v red" id="opcost">₹0.70 L</div><div class="l">Monthly Operating Cost</div></div>
+    <div class="stat"><div class="v" id="profit">₹0.30 L</div><div class="l">Monthly Profit</div></div>
+  </div>
+
+  <div class="breakdown">
+    <h3>Breakdown</h3>
+    <div class="row"><span class="lab">Monthly revenue</span><span class="val" id="rev2">₹1,00,000</span></div>
+    <div class="row"><span class="lab">Monthly operating cost</span><span class="val" id="opcost2">₹70,000</span></div>
+    <div class="row"><span class="lab">Monthly profit</span><span class="val" id="profit2">₹30,000</span></div>
+    <div class="row"><span class="lab">Yearly profit</span><span class="val" id="yearProfit">₹3,60,000</span></div>
+    <div class="row"><span class="lab">One-time hardware (₹5,700/bus)</span><span class="val" id="hardware">₹2,85,000</span></div>
+    <div class="row total"><span class="lab">Hardware payback period</span><span class="val" id="payback">~10 months</span></div>
+  </div>
+
+  <div class="gov">
+    <h3>What the government gets</h3>
+    <div class="row"><span class="lab">Est. fuel savings / year</span><span class="val" id="govFuel">₹0.00 Cr</span></div>
+    <div class="row"><span class="lab">AIS-140 compliance</span><span class="val" style="color:#67e8f9;">Legal requirement met</span></div>
+    <div class="row"><span class="lab">Ridership trust / service</span><span class="val" style="color:#67e8f9;">Improved</span></div>
+    <div class="row"><span class="lab">Their return on your fee</span><span class="val" style="color:#67e8f9;" id="roi">0x</span></div>
+  </div>
+
+  <div class="note">
+    Assumptions: fuel spend ≈ ₹5 Lakh/bus/year, fuel savings ≈ 12% from real-time tracking. Hardware cost recovered as capex (not monthly). Edit numbers freely — these are editable estimates for your pitch.
+  </div>
+</div>
+
+<script>
+function fmtINR(n) {
+  if (n >= 10000000) return '₹' + (n/10000000).toFixed(2) + ' Cr';
+  if (n >= 100000) return '₹' + (n/100000).toFixed(2) + ' L';
+  if (n >= 1000) return '₹' + (n/1000).toFixed(1) + ' K';
+  return '₹' + Math.round(n);
+}
+function fmtFull(n) {
+  if (n >= 10000000) return '₹' + (n/10000000).toFixed(2) + ' Crore';
+  if (n >= 100000) return '₹' + (n/100000).toFixed(2) + ' Lakh';
+  if (n >= 1000) return '₹' + (n/1000).toFixed(1) + 'K';
+  return '₹' + Math.round(n);
+}
+function calc() {
+  const buses = Math.max(1, +document.getElementById('buses').value);
+  const price = +document.getElementById('price').value;
+  const cost = +document.getElementById('cost').value;
+  document.getElementById('busVal').textContent = buses.toLocaleString('en-IN');
+
+  const rev = buses * price;
+  const opcost = buses * cost;
+  const profit = rev - opcost;
+  const yearProfit = profit * 12;
+  const hardware = buses * 5700;
+  const payback = profit > 0 ? Math.ceil(hardware / profit) + ' months' : '∞ (no profit)';
+  const govFuel = buses * 500000 * 0.12;
+  const roi = (buses * 500000 * 0.12) / (rev * 12 || 1);
+
+  document.getElementById('rev').textContent = fmtINR(rev);
+  document.getElementById('opcost').textContent = fmtINR(opcost);
+  document.getElementById('profit').textContent = fmtINR(profit);
+  document.getElementById('rev2').textContent = fmtFull(rev);
+  document.getElementById('opcost2').textContent = fmtFull(opcost);
+  document.getElementById('profit2').textContent = fmtFull(profit);
+  document.getElementById('yearProfit').textContent = fmtFull(yearProfit);
+  document.getElementById('hardware').textContent = fmtFull(hardware);
+  document.getElementById('payback').textContent = payback;
+  document.getElementById('govFuel').textContent = fmtFull(govFuel);
+  document.getElementById('roi').textContent = roi.toFixed(1) + 'x';
+}
+calc();
+</script>
+</body>
+</html>

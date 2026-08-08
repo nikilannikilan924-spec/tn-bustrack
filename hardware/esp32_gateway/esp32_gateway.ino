@@ -4,7 +4,7 @@
 const char* SSID = "SSID";
 const char* PASSWORD = "Nikilan31";
 const char* BUS_ID = "M31B";
-const char* API_HOST = "tn-bustrack-production-4b42.up.railway.app";
+const char* API_HOST = "tn-bustrack-production-da58.up.railway.app";
 
 #define LED_PIN 2
 #define UART_RX_PIN 16

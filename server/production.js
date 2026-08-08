@@ -3,6 +3,7 @@ require('dotenv').config();
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
+const net = require('net');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -765,6 +766,181 @@ io.on('connection', (socket) => {
 // ── SERVE NEXT.JS ────────────────────────────────────────────
 app.all('*', (req, res) => handle(req, res));
 
+// ── TELTONIKA FMB920 GPS RECEIVER (TCP, Codec 8) ──────────────
+// IMEI -> busId mapping. e.g. FMB_IMEI_MAP="351234567890123:B101"
+const IMEI_MAP = {};
+(process.env.FMB_IMEI_MAP || '').split(',').forEach(pair => {
+  const [imei, busId] = pair.split(':');
+  if (imei && busId) IMEI_MAP[imei.trim()] = busId.trim();
+});
+
+function crc16(buffer) {
+  let crc = 0;
+  for (let i = 0; i < buffer.length; i++) {
+    crc ^= buffer[i] << 8;
+    for (let j = 0; j < 8; j++) {
+      crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);
+      crc &= 0xFFFF;
+    }
+  }
+  return crc;
+}
+
+// FMB920 sends IMEI as 8 BCD bytes + 4 zero bytes (12 bytes total).
+// Each nibble is a decimal digit; the last nibble is padding 'F'.
+function decodeImeiBcd(raw8) {
+  let digits = '';
+  for (let i = 0; i < 8; i++) {
+    const hi = raw8[i] >> 4;
+    const lo = raw8[i] & 0x0F;
+    if (hi < 10) digits += hi;
+    if (lo < 10) digits += lo;
+  }
+  return digits;
+}
+
+function applyFmbGps(busId, record) {
+  const lat = record.lat;
+  const lng = record.lng;
+  const speed = record.speed || 0;
+  const validCoord = Math.abs(lat) > 0.01 && Math.abs(lng) > 0.01;
+  if (!validCoord) return;
+
+  if (!busConfigs[busId]) {
+    busConfigs[busId] = { busId, totalSeats: 42, routeName: '', routeKey: busId, driverName: '', busNumber: busId, stops: [], updatedAt: new Date().toISOString() };
+  }
+  const cfg = busConfigs[busId];
+  const routeKey = cfg.routeKey || busId;
+  const customStops = cfg.stops;
+  const prev = busPositions[busId];
+  const { stop, distKm } = getNearestStop(lat, lng, routeKey, customStops, busId);
+  const nextStops = getNextStops(stop.name, routeKey, lat, lng, customStops, speed);
+  const totalSeats = cfg.totalSeats || 42;
+  const inside = prev ? prev.inside : 0;
+
+  const busData = {
+    busId,
+    routeId: cfg.routeKey || busId,
+    totalSeats,
+    lat,
+    lng,
+    speed,
+    seats: totalSeats - inside,
+    inside,
+    route: cfg.routeName || busId,
+    busNumber: cfg.busNumber || busId,
+    gpsFixed: true,
+    currentStop: stop.name || '',
+    area: prev?.area || '',
+    road: prev?.road || '',
+    city: prev?.city || '',
+    distFromStop: (distKm * 1.4).toFixed(2),
+    nextStops,
+    lastUpdate: new Date().toISOString(),
+  };
+
+  busPositions[busId] = busData;
+
+  if (!gpsHistory[busId]) gpsHistory[busId] = [];
+  gpsHistory[busId].push({ lat, lng, t: Date.now() });
+  if (gpsHistory[busId].length > 100) gpsHistory[busId].shift();
+
+  io.to(`bus-${busId}`).emit('busUpdate', busData);
+  io.to('all-buses').emit('busUpdate', busData);
+  reverseGeocode(lat, lng, busId);
+  console.log(`FMB920 GPS ${busId}: ${lat.toFixed(6)}, ${lng.toFixed(6)} @${speed}km/h`);
+}
+
+function parseCodec8(buf, nRec) {
+  const records = [];
+  let off = 0;
+  for (let i = 0; i < nRec; i++) {
+    // 8 bytes timestamp, 1 priority, 4 lat, 4 lng, 2 alt, 2 angle,
+    // 1 sats, 2 speed (km/h*10), 4 event, then IO section
+    off += 8; // timestamp ms
+    off += 1; // priority
+    const lng = buf.readInt32BE(off) / 10000000; off += 4;
+    const lat = buf.readInt32BE(off) / 10000000; off += 4;
+    off += 2; // altitude
+    off += 2; // angle
+    off += 1; // sats
+    const speed = buf.readUInt16BE(off) / 10; off += 2;
+    off += 4; // event id
+    const ioCount = buf[off++];
+    for (let j = 0; j < ioCount; j++) {
+      off += 2; // IO id (1 byte) + length (1 byte)
+      const len = buf[off - 1];
+      off += len;
+    }
+    records.push({ lat, lng, speed });
+  }
+  return records;
+}
+
+const tcpServer = net.createServer((socket) => {
+  let buffer = Buffer.alloc(0);
+  let imei = null;
+  let gotImei = false;
+
+  socket.on('data', (chunk) => {
+    buffer = Buffer.concat([buffer, chunk]);
+
+    if (!gotImei) {
+      if (buffer.length < 12) return;
+      // IMEI = 8 BCD bytes + 4 zero bytes
+      imei = decodeImeiBcd(buffer.slice(0, 8));
+      buffer = buffer.slice(12);
+      gotImei = true;
+      const busId = IMEI_MAP[imei] || imei;
+      console.log(`FMB920 connected: IMEI ${imei} -> bus ${busId}`);
+      socket.write(Buffer.from([0x01])); // ACK IMEI
+    }
+
+    while (buffer.length >= 8) {
+      // 4 bytes zeros preamble, 4 bytes data length (includes codec + records,
+      // but NOT the trailing CRC). CRC (4 bytes) follows the data field.
+      const dataLength = buffer.readUInt32BE(4);
+      if (buffer.length < 8 + dataLength + 4) break; // need more data (wait for crc too)
+      const avlData = buffer.slice(8, 8 + dataLength);
+      const crcRecv = buffer.readUInt32BE(8 + dataLength) & 0xFFFF;
+      const crcCalc = crc16(avlData);
+      buffer = buffer.slice(8 + dataLength + 4);
+
+      if (crcRecv !== crcCalc) {
+        console.log(`FMB920 ${imei}: CRC mismatch (recv ${crcRecv} calc ${crcCalc})`);
+        continue;
+      }
+
+      const codec = avlData[0];
+      let nRec;
+      if (codec === 0x08) {
+        nRec = avlData[1];
+      } else if (codec === 0x0c || codec === 0x10) {
+        nRec = avlData.readUInt16BE(1);
+      } else {
+        console.log(`FMB920 ${imei}: unsupported codec ${codec}`);
+        continue;
+      }
+
+      const records = parseCodec8(avlData.slice(2), nRec);
+      const busId = IMEI_MAP[imei] || imei;
+      records.forEach(rec => applyFmbGps(busId, rec));
+
+      // ACK number of records processed
+      const ack = Buffer.alloc(4);
+      ack.writeUInt32BE(nRec);
+      socket.write(ack);
+    }
+  });
+
+  socket.on('error', () => {});
+  socket.on('close', () => {
+    if (imei) console.log(`FMB920 disconnected: ${imei}`);
+  });
+});
+
+const TCP_PORT = Number(process.env.FMB_TCP_PORT || 5000);
+
 // ── START ────────────────────────────────────────────────────
 const PORT = Number(process.env.PORT || 3000);
 
@@ -772,5 +948,8 @@ nextApp.prepare().then(() => {
   loadConfigs();
   server.listen(PORT, () => {
     console.log(`TN BusTrack production server running on http://localhost:${PORT}`);
+  });
+  tcpServer.listen(TCP_PORT, () => {
+    console.log(`Teltonika FMB920 TCP receiver listening on port ${TCP_PORT}`);
   });
 });
