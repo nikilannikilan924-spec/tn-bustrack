@@ -949,7 +949,9 @@ nextApp.prepare().then(() => {
   server.listen(PORT, () => {
     console.log(`TN BusTrack production server running on http://localhost:${PORT}`);
   });
+  server.on('error', (e) => console.error('HTTP server error:', e.message));
   tcpServer.listen(TCP_PORT, () => {
     console.log(`Teltonika FMB920 TCP receiver listening on port ${TCP_PORT}`);
   });
+  tcpServer.on('error', (e) => console.error('Teltonika TCP server error:', e.message));
 });
