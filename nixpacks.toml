@@ -1,0 +1,12 @@
+[nixpacks]
+  [nixpacks.python]
+  enabled = false
+  
+[[nixpacks.components]]
+  type = "node"
+
+  [nixpacks.components.node]
+  version = "20"
+  installCommand = "npm ci"
+  buildCommand = "npm run build"
+  startCommand = "node server/production.js"
