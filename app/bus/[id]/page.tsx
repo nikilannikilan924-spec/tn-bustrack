@@ -56,7 +56,6 @@ export default function BusDetailPage({ params }: BusPageProps) {
   const bus = buses.find((b) => b.id === id);
   if (!loaded) return <div className="space-y-5 pb-28 max-sm:space-y-4 p-6"><p className="text-[var(--text-secondary)]">Loading...</p></div>;
   if (!bus) return notFound();
-  if (!bus) return notFound();
 
   const currentIndex = bus.route.stops.findIndex((stop) => stop.name === bus.currentStop);
   const crowdedPct = Math.round((bus.passengersInside / bus.seatCapacity) * 100);
