@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { useLanguage } from '@/lib/LanguageContext';
 import { haversineKm, formatKm } from '@/lib/distance';
+import type { Stop } from '@/lib/types';
 
 type BusStatus = 'running' | 'delayed' | 'stopped';
 
@@ -60,6 +61,7 @@ function normalizeBus(raw: any): LiveBus {
 export function MapBoard() {
   const { t } = useLanguage();
   const [buses, setBuses] = useState<LiveBus[]>([]);
+  const [stops, setStops] = useState<Stop[]>([]);
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [stopSearch, setStopSearch] = useState('');
 
@@ -73,8 +75,25 @@ export function MapBoard() {
     } catch (_) {}
   }
 
+  async function fetchStops() {
+    try {
+      const res = await fetch('/api/stops');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setStops(data.map((stop: any) => ({
+            ...stop,
+            lat: Number(stop.lat),
+            lng: Number(stop.lng),
+          })));
+        }
+      }
+    } catch (_) {}
+  }
+
   useEffect(() => {
     fetchBuses();
+    fetchStops();
     const unsub1 = subscribeCurrentBuses((buses: any[]) => {
       setBuses(buses.map(normalizeBus));
     });
@@ -104,9 +123,10 @@ export function MapBoard() {
 
   const allStopNames = useMemo(() => {
     const names = new Set<string>();
+    stops.forEach((stop) => { if (stop.name) names.add(stop.name); });
     buses.forEach((b) => { if (b.currentStop) names.add(b.currentStop); });
     return Array.from(names).sort();
-  }, [buses]);
+  }, [buses, stops]);
 
   const filteredBuses = useMemo(() => {
     const q = stopSearch.trim().toLowerCase();
@@ -189,7 +209,7 @@ export function MapBoard() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.45fr_0.55fr] lg:gap-6">
-        <LiveMap buses={filteredBuses} onBusSelect={setSelectedBusId} />
+        <LiveMap buses={filteredBuses} stops={stops} onBusSelect={setSelectedBusId} />
         <aside className="space-y-4">
           <div className="glass rounded-3xl p-5 shadow-lg shadow-[var(--shadow-heavy)] max-sm:rounded-2xl max-sm:p-4">
             <Input

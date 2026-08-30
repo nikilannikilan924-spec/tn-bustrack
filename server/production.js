@@ -209,6 +209,28 @@ function getNextStops(currentStopName, routeKey, busLat, busLng, customStops, sp
   });
 }
 
+function refreshBusStopData(busId) {
+  const bus = busPositions[busId];
+  const cfg = busConfigs[busId];
+  if (!bus || !cfg) return null;
+
+  const routeKey = cfg.routeKey || busId;
+  const customStops = Array.isArray(cfg.stops) && cfg.stops.length > 0 ? cfg.stops : undefined;
+  const { stop, distKm } = getNearestStop(bus.lat, bus.lng, routeKey, customStops, busId);
+  const totalSeats = Number(cfg.totalSeats) || 42;
+  const inside = Number.isFinite(Number(bus.inside)) ? Number(bus.inside) : 0;
+
+  bus.routeId = routeKey;
+  bus.totalSeats = totalSeats;
+  bus.seats = totalSeats - inside;
+  bus.route = cfg.routeName || bus.route || busId;
+  bus.busNumber = cfg.busNumber || bus.busNumber || busId;
+  bus.currentStop = stop.name || '';
+  bus.distFromStop = Number.isFinite(distKm) ? distKm.toFixed(2) : '0.00';
+  bus.nextStops = getNextStops(stop.name, routeKey, bus.lat, bus.lng, customStops, bus.speed);
+  return bus;
+}
+
 function findBus(busId) {
   return Object.values(busPositions).find(b => b.busId === busId) || null;
 }
@@ -487,6 +509,12 @@ app.post('/api/bus/create', (req, res) => {
       lastUpdate: new Date().toISOString(),
     };
     io.to('all-buses').emit('busUpdate', busPositions[busId]);
+  } else {
+    const updated = refreshBusStopData(busId);
+    if (updated) {
+      io.to(`bus-${busId}`).emit('busUpdate', updated);
+      io.to('all-buses').emit('busUpdate', updated);
+    }
   }
   saveConfigs();
   res.status(201).json({ bus, config: busConfigs[busId] });

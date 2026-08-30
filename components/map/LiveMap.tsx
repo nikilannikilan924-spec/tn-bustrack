@@ -21,8 +21,18 @@ interface LiveBus {
   gpsFixed?: boolean;
 }
 
+interface Stop {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  sequence: number;
+  routeId?: string;
+}
+
 interface LiveMapProps {
   buses: LiveBus[];
+  stops: Stop[];
   onBusSelect: (id: string) => void;
 }
 
@@ -38,6 +48,12 @@ function hasValidCoordinates(bus: LiveBus) {
     (bus.latitude !== 0 || bus.longitude !== 0);
 }
 
+function hasValidStopCoordinates(stop: Stop) {
+  return Number.isFinite(stop.lat) && Number.isFinite(stop.lng) &&
+    Math.abs(stop.lat) <= 90 && Math.abs(stop.lng) <= 180 &&
+    (stop.lat !== 0 || stop.lng !== 0);
+}
+
 function makeBusIcon(bus: LiveBus, size: number) {
   const color = statusColor(bus.status);
   const label = String(bus.number || bus.id).split(' ').pop() || bus.id;
@@ -50,6 +66,18 @@ function makeBusIcon(bus: LiveBus, size: number) {
     </div>`,
     iconSize: [size, size + 34],
     iconAnchor: [size / 2, size / 2],
+  });
+}
+
+function makeStopIcon(stop: Stop) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="display:flex;align-items:center;gap:3px;white-space:nowrap">
+      <div style="width:11px;height:11px;border-radius:50%;background:#0EA5E9;border:2px solid white;box-shadow:0 1px 5px rgba(0,0,0,0.35)"></div>
+      <span style="font-size:9px;font-weight:600;color:#0369A1;background:rgba(255,255,255,0.9);padding:1px 4px;border-radius:4px">${stop.sequence}. ${stop.name}</span>
+    </div>`,
+    iconSize: [11, 11],
+    iconAnchor: [5, 5],
   });
 }
 
@@ -72,10 +100,11 @@ function makePopupHtml(bus: LiveBus): string {
   </div>`;
 }
 
-export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
+export default function LiveMap({ buses, stops, onBusSelect }: LiveMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const stopMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const centeredRef = useRef(false);
 
   useEffect(() => {
@@ -100,8 +129,42 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
     return () => {
       map.remove();
       mapRef.current = null;
+      stopMarkersRef.current.clear();
     };
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const markers = stopMarkersRef.current;
+    const seen = new Set<string>();
+
+    stops.forEach((stop) => {
+      if (!hasValidStopCoordinates(stop)) return;
+      const id = String(stop.id || `${stop.routeId || 'route'}-${stop.sequence}-${stop.name}`);
+      seen.add(id);
+      const position: L.LatLngExpression = [stop.lat, stop.lng];
+      const marker = markers.get(id);
+
+      if (marker) {
+        marker.setLatLng(position);
+        marker.setIcon(makeStopIcon(stop));
+      } else {
+        const nextMarker = L.marker(position, { icon: makeStopIcon(stop), zIndexOffset: -100 });
+        nextMarker.bindTooltip(stop.name, { direction: 'top', offset: [0, -6] });
+        nextMarker.addTo(map);
+        markers.set(id, nextMarker);
+      }
+    });
+
+    markers.forEach((marker, id) => {
+      if (!seen.has(id)) {
+        marker.removeFrom(map);
+        markers.delete(id);
+      }
+    });
+  }, [stops]);
 
   const prevDataRef = useRef<Map<string, string>>(new Map());
   const prevIconRef = useRef<Map<string, string>>(new Map());
@@ -183,21 +246,23 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || buses.length === 0 || centeredRef.current) return;
-    const hasValidCoord = buses.some(hasValidCoordinates);
-    if (!hasValidCoord) return;
+    if (!map || centeredRef.current) return;
 
-    const valid = buses.filter(hasValidCoordinates);
-    if (valid.length === 0) return;
-    if (valid.length === 1) {
-      map.setView([valid[0].latitude, valid[0].longitude], 15, { animate: true });
+    const points: L.LatLngExpression[] = [
+      ...buses.filter(hasValidCoordinates).map((bus) => [bus.latitude, bus.longitude] as L.LatLngExpression),
+      ...stops.filter(hasValidStopCoordinates).map((stop) => [stop.lat, stop.lng] as L.LatLngExpression),
+    ];
+    if (points.length === 0) return;
+
+    if (points.length === 1) {
+      map.setView(points[0], 15, { animate: true });
       centeredRef.current = true;
     } else {
-      const bounds = L.latLngBounds(valid.map(b => [b.latitude, b.longitude] as L.LatLngExpression));
+      const bounds = L.latLngBounds(points);
       map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12, animate: true });
       centeredRef.current = true;
     }
-  }, [buses]);
+  }, [buses, stops]);
 
   return (
     <div className="relative h-[calc(100vh-5rem)] min-h-[500px] rounded-3xl border border-[var(--border)] bg-white/80 shadow-lg shadow-[var(--shadow-heavy)] max-sm:h-[calc(100dvh-4rem)] max-sm:rounded-2xl max-sm:min-h-[400px]">
