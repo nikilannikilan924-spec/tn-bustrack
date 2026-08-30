@@ -121,7 +121,7 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
       if (!hasValidCoordinates(bus)) return;
       seen.add(bus.id);
       const targetLatLng: L.LatLngExpression = [bus.latitude, bus.longitude];
-      const serialized = `${bus.latitude},${bus.longitude},${bus.speed},${bus.seatsAvailable},${bus.currentStop},${bus.status},${bus.nextStops.map(s=>s.name+s.etaMin).join('|')}`;
+      const serialized = `${bus.latitude},${bus.longitude},${bus.speed},${bus.seatsAvailable},${bus.currentStop},${bus.status},${bus.gpsFixed},${bus.nextStops.map(s=>s.name+s.etaMin).join('|')}`;
       const iconKey = `${bus.status}|${bus.number}|${bus.currentStop}`;
 
       if (markers.has(bus.id)) {
