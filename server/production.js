@@ -901,16 +901,20 @@ const serverFMB = net.createServer((socket) => {
     console.log('FMB DATA EVENT - bytes:', chunk.length);
 
     if (!handshaked) {
-      if (buf.length < 15) return;
+      if (buf.length < 2) return;
 
-      imei = buf.subarray(0, 15).toString('ascii');
+      const hasLengthPrefix = buf.readUInt16BE(0) === 15;
+      const handshakeLength = hasLengthPrefix ? 17 : 15;
+      if (buf.length < handshakeLength) return;
+
+      imei = buf.subarray(hasLengthPrefix ? 2 : 0, handshakeLength).toString('ascii');
       if (!/^\d{15}$/.test(imei)) {
         console.log(`FMB920 invalid IMEI handshake: ${JSON.stringify(imei)}`);
         socket.destroy();
         return;
       }
 
-      busId = fmbImeiMap[imei];
+      busId = fmbImeiMap[imei] || fmbImeiMap[imei.slice(0, -1)];
       if (!busId) {
         console.log(`FMB920 unknown IMEI: ${imei}, closing`);
         socket.end();
@@ -919,7 +923,7 @@ const serverFMB = net.createServer((socket) => {
 
       socket.write(Buffer.from([0x01]));
       handshaked = true;
-      buf = buf.subarray(15);
+      buf = buf.subarray(handshakeLength);
       console.log(`FMB920 handshake OK: IMEI=${imei} -> Bus ${busId}`);
     }
 
