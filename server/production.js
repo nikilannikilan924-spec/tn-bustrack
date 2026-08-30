@@ -694,9 +694,8 @@ mqttClient.on('message', (topic, buf) => {
 });
 mqttClient.on('error', e => console.error('MQTT error:', e.message));
 
-// ── STALE BUS CLEANUP (every 15s, remove buses offline >120s) ─
-// 120s allows ESP32 brownout reboot + WiFi reconnect time
-// Only remove buses that had a live GPS fix; keep virtual positions (gpsFixed=false)
+// ── STALE BUS HANDLING (every 15s) ────────────────────────────
+// Keep the last known coordinate visible while a device reconnects.
 setInterval(() => {
   const now = Date.now();
   Object.keys(busPositions).forEach((busId) => {
@@ -705,10 +704,12 @@ setInterval(() => {
     if (!bus.gpsFixed) return;
     const age = now - new Date(bus.lastUpdate).getTime();
     if (age > 120000) {
-      console.log(`Removing stale bus ${busId} (offline ${Math.round(age / 1000)}s)`);
-      delete busPositions[busId];
-      delete gpsHistory[busId];
-      io.to('all-buses').emit('busRemoved', busId);
+      bus.gpsFixed = false;
+      bus.status = 'stopped';
+      console.log(`Marking stale bus ${busId} (offline ${Math.round(age / 1000)}s)`);
+      saveConfigs();
+      io.to(`bus-${busId}`).emit('busUpdate', bus);
+      io.to('all-buses').emit('busUpdate', bus);
     }
   });
 }, 15000);
