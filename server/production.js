@@ -722,8 +722,8 @@ mqttClient.on('message', (topic, buf) => {
 mqttClient.on('error', e => console.error('MQTT error:', e.message));
 
 // ── STALE BUS HANDLING (every 15s) ────────────────────────────
-// FMB920 currently reports about every 130s, so allow two missed reports.
-const GPS_STALE_AFTER_MS = 5 * 60 * 1000;
+// FMB920 can buffer reports or use a longer on-stop interval while stationary.
+const GPS_STALE_AFTER_MS = Number(process.env.GPS_STALE_AFTER_MS) || 10 * 60 * 1000;
 setInterval(() => {
   const now = Date.now();
   Object.keys(busPositions).forEach((busId) => {
@@ -922,6 +922,9 @@ const serverFMB = net.createServer((socket) => {
   let imei = null;
   let busId = null;
   let handshaked = false;
+
+  socket.setKeepAlive(true, 60 * 1000);
+  socket.setNoDelay(true);
 
   socket.on('data', (chunk) => {
     buf = Buffer.concat([buf, chunk]);
