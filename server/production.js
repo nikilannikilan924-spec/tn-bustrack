@@ -508,13 +508,12 @@ app.post('/api/bus/create', (req, res) => {
       nextStops,
       lastUpdate: new Date().toISOString(),
     };
-    io.to('all-buses').emit('busUpdate', busPositions[busId]);
-  } else {
-    const updated = refreshBusStopData(busId);
-    if (updated) {
-      io.to(`bus-${busId}`).emit('busUpdate', updated);
-      io.to('all-buses').emit('busUpdate', updated);
-    }
+  }
+
+  const updated = refreshBusStopData(busId);
+  if (updated) {
+    io.to(`bus-${busId}`).emit('busUpdate', updated);
+    io.to('all-buses').emit('busUpdate', updated);
   }
   saveConfigs();
   res.status(201).json({ bus, config: busConfigs[busId] });
