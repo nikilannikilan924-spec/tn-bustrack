@@ -32,9 +32,15 @@ function statusColor(status: string) {
   return '#22C55E';
 }
 
+function hasValidCoordinates(bus: LiveBus) {
+  return Number.isFinite(bus.latitude) && Number.isFinite(bus.longitude) &&
+    Math.abs(bus.latitude) <= 90 && Math.abs(bus.longitude) <= 180 &&
+    (bus.latitude !== 0 || bus.longitude !== 0);
+}
+
 function makeBusIcon(bus: LiveBus, size: number) {
   const color = statusColor(bus.status);
-  const label = bus.number.split(' ').pop() || bus.number;
+  const label = String(bus.number || bus.id).split(' ').pop() || bus.id;
   return L.divIcon({
     className: '',
     html: `<div style="display:flex;flex-direction:column;align-items:center;gap:1px">
@@ -112,6 +118,7 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
     const seen = new Set<string>();
 
     buses.forEach((bus) => {
+      if (!hasValidCoordinates(bus)) return;
       seen.add(bus.id);
       const targetLatLng: L.LatLngExpression = [bus.latitude, bus.longitude];
       const serialized = `${bus.latitude},${bus.longitude},${bus.speed},${bus.seatsAvailable},${bus.currentStop},${bus.status},${bus.nextStops.map(s=>s.name+s.etaMin).join('|')}`;
@@ -177,10 +184,10 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || buses.length === 0 || centeredRef.current) return;
-    const hasValidCoord = buses.some(b => b.latitude !== 0 || b.longitude !== 0);
+    const hasValidCoord = buses.some(hasValidCoordinates);
     if (!hasValidCoord) return;
 
-    const valid = buses.filter(b => b.latitude !== 0 || b.longitude !== 0);
+    const valid = buses.filter(hasValidCoordinates);
     if (valid.length === 0) return;
     if (valid.length === 1) {
       map.setView([valid[0].latitude, valid[0].longitude], 15, { animate: true });
@@ -188,6 +195,7 @@ export default function LiveMap({ buses, onBusSelect }: LiveMapProps) {
     } else {
       const bounds = L.latLngBounds(valid.map(b => [b.latitude, b.longitude] as L.LatLngExpression));
       map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12, animate: true });
+      centeredRef.current = true;
     }
   }, [buses]);
 

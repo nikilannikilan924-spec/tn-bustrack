@@ -31,21 +31,28 @@ interface LiveBus {
 const LiveMap = dynamic(() => import('@/components/map/LiveMap'), { ssr: false });
 
 function normalizeBus(raw: any): LiveBus {
+  const id = String(raw.busId ?? raw.id ?? raw.number ?? '');
+  const number = String(raw.busNumber ?? raw.number ?? id);
+  const routeName = String(raw.route ?? raw.routeName ?? id);
+  const rawLatitude = Number(raw.lat ?? raw.latitude);
+  const rawLongitude = Number(raw.lng ?? raw.longitude);
+  const rawSpeed = Number(raw.speed);
+
   return {
-    id: raw.busId || raw.id,
-    number: raw.busNumber || raw.number || raw.busId,
-    routeName: raw.route || raw.routeName || raw.busId,
+    id,
+    number,
+    routeName,
     currentStop: raw.currentStop || '',
     area: raw.area || raw.currentStop || '',
     road: raw.road || raw.route || '',
     city: raw.city || '',
-    status: raw.status || (raw.speed > 0 ? 'running' : 'stopped'),
-    speed: raw.speed || 0,
-    latitude: raw.lat ?? raw.latitude ?? 0,
-    longitude: raw.lng ?? raw.longitude ?? 0,
-    seatsAvailable: raw.seats ?? raw.seatsAvailable ?? 0,
-    seatCapacity: raw.seatCapacity ?? raw.totalSeats ?? 42,
-    nextStops: raw.nextStops || [],
+    status: raw.status || (rawSpeed > 0 ? 'running' : 'stopped'),
+    speed: Number.isFinite(rawSpeed) ? rawSpeed : 0,
+    latitude: Number.isFinite(rawLatitude) ? rawLatitude : 0,
+    longitude: Number.isFinite(rawLongitude) ? rawLongitude : 0,
+    seatsAvailable: Number(raw.seats ?? raw.seatsAvailable ?? 0),
+    seatCapacity: Number(raw.seatCapacity ?? raw.totalSeats ?? 42),
+    nextStops: Array.isArray(raw.nextStops) ? raw.nextStops : [],
     gpsFixed: raw.gpsFixed,
   };
 }

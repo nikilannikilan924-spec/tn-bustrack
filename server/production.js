@@ -221,7 +221,17 @@ app.post('/api/buses/update', (req, res) => {
   deletedBuses.delete(busId);
 
   const prev = busPositions[busId];
-  const validCoord = lat && lng && Math.abs(lat) > 0.01 && Math.abs(lng) > 0.01;
+  const numericLat = Number(lat);
+  const numericLng = Number(lng);
+  const numericSpeed = Number(speed);
+  const validCoord = Number.isFinite(numericLat) && Number.isFinite(numericLng) &&
+    Math.abs(numericLat) > 0.01 && Math.abs(numericLng) > 0.01;
+
+  if (validCoord) {
+    lat = numericLat;
+    lng = numericLng;
+  }
+  speed = Number.isFinite(numericSpeed) ? numericSpeed : 0;
 
   if (!validCoord && prev) {
     lat = prev.lat;
@@ -285,6 +295,7 @@ app.post('/api/buses/update', (req, res) => {
   gpsHistory[busId].push({ lat, lng, t: Date.now() });
   if (gpsHistory[busId].length > 100) gpsHistory[busId].shift();
 
+  saveConfigs();
   io.to(`bus-${busId}`).emit('busUpdate', busData);
   io.to('all-buses').emit('busUpdate', busData);
 
@@ -517,30 +528,42 @@ app.post('/api/bus/location', (req, res) => {
     return res.status(400).json({ error: 'busId, latitude, longitude required' });
   }
   if (deletedBuses.has(busId)) return res.status(403).json({ error: 'Bus deleted' });
+  latitude = Number(latitude);
+  longitude = Number(longitude);
+  speed = Number.isFinite(Number(speed)) ? Number(speed) : 0;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return res.status(400).json({ error: 'latitude and longitude must be numbers' });
+  }
   const cfg = busConfigs[busId] || {};
   const routeKey = cfg.routeKey || 'namakkal-salem';
   const customStops = cfg.stops;
-  const { stop, distKm } = getNearestStop(Number(latitude), Number(longitude), routeKey, customStops);
-  const nextStops = getNextStops(stop.name, routeKey, Number(latitude), Number(longitude), customStops, speed);
+  const prev = busPositions[busId];
+  const { stop, distKm } = getNearestStop(latitude, longitude, routeKey, customStops, busId);
+  const nextStops = getNextStops(stop.name, routeKey, latitude, longitude, customStops, speed);
   const totalSeats = cfg.totalSeats || 42;
   const busData = {
     busId,
     routeId: cfg.routeKey || busId,
     totalSeats,
-    lat: Number(latitude),
-    lng: Number(longitude),
-    speed: speed || 0,
+    lat: latitude,
+    lng: longitude,
+    speed,
     seats: seatsAvailable ?? totalSeats - (passengersInside || 0),
     inside: passengersInside || 0,
     route: cfg.routeName || busId,
     busNumber: cfg.busNumber || busId,
     gpsFixed: true,
     currentStop: stop.name || '',
+    area: prev?.area || '',
+    road: prev?.road || '',
+    city: prev?.city || '',
     distFromStop: distKm.toFixed(2),
     nextStops,
     lastUpdate: new Date().toISOString(),
   };
   busPositions[busId] = busData;
+  saveConfigs();
+  io.to(`bus-${busId}`).emit('busUpdate', busData);
   io.to('all-buses').emit('busUpdate', busData);
   res.json({ ok: true });
 });
@@ -715,8 +738,9 @@ io.on('connection', (socket) => {
 app.all('*', (req, res) => handle(req, res));
 
 // ── FMB920 TCP RECEIVER ────────────────────────────────────────
-const FMB_TCP_PORT = process.env.FMB_TCP_PORT || 5000;
+const FMB_TCP_PORT = Number(process.env.FMB_TCP_PORT || 4001);
 const FMB_IMEI_MAP_STR = process.env.FMB_IMEI_MAP || '';
+const net = require('net');
 
 function parseImeiMap(str) {
   const map = {};
@@ -728,6 +752,7 @@ function parseImeiMap(str) {
   return map;
 }
 const fmbImeiMap = parseImeiMap(FMB_IMEI_MAP_STR);
+console.log(`FMB920 IMEI mappings loaded: ${Object.keys(fmbImeiMap).length}`);
 
 function crc16(data) {
   let crc = 0;
@@ -740,112 +765,214 @@ function crc16(data) {
   return crc & 0xFFFF;
 }
 
-function decodeCodec8(buf) {
-  let off = 0;
-  const codecID = buf.readUInt8(off++);
-  if (codecID !== 0x08) return null;
-  const numRecords = buf.readUInt8(off++);
-  const records = [];
-  for (let r = 0; r < numRecords; r++) {
-    const timestamp = buf.readUInt32BE(off);
-    off += 4;
-    const gpsInfo = buf.readUInt8(off++);
-    const gpsLen = buf.readUInt8(off++);
-    const lat = buf.readInt32BE(off) / 10000000;
-    off += 4;
-    const lng = buf.readInt32BE(off) / 10000000;
-    off += 4;
-    const altitude = buf.readUInt16BE(off);
-    off += 2;
-    const angle = buf.readUInt16BE(off);
-    off += 2;
-    const sats = buf.readUInt8(off);
-    off += 1;
-    const speed = buf.readUInt16BE(off);
-    off += 2;
-    const ioCount = buf.readUInt8(off++);
-    const ioData = [];
-    for (let i = 0; i < ioCount; i++) {
-      const ioId = buf.readUInt8(off++);
-      const ioVal = buf.readUInt32BE(off);
-      off += 4;
-      ioData.push({ id: ioId, value: ioVal });
-    }
-    records.push({
-      timestamp, lat, lng, altitude, angle, sats, speed,
-      io: ioData.length ? ioData : undefined,
-    });
+function decodeCodec8(data) {
+  if (!Buffer.isBuffer(data) || data.length < 3) {
+    throw new Error('Codec 8 data is too short');
   }
+
+  let offset = 0;
+  const codecID = data.readUInt8(offset++);
+  if (codecID !== 0x08) {
+    throw new Error(`unsupported codec ${codecID}`);
+  }
+
+  const numRecords = data.readUInt8(offset++);
+  const records = [];
+
+  for (let index = 0; index < numRecords; index += 1) {
+    const fixedLength = 8 + 1 + 4 + 4 + 2 + 2 + 1 + 2 + 1 + 1;
+    if (offset + fixedLength > data.length) {
+      throw new Error(`Codec 8 record ${index} is incomplete`);
+    }
+
+    const timestamp = Number(data.readBigUInt64BE(offset));
+    offset += 8;
+    const priority = data.readUInt8(offset++);
+    const lng = data.readInt32BE(offset) / 10000000;
+    offset += 4;
+    const lat = data.readInt32BE(offset) / 10000000;
+    offset += 4;
+    const altitude = data.readInt16BE(offset);
+    offset += 2;
+    const angle = data.readUInt16BE(offset);
+    offset += 2;
+    const sats = data.readUInt8(offset++);
+    const speed = data.readUInt16BE(offset);
+    offset += 2;
+    const eventId = data.readUInt8(offset++);
+    const totalIo = data.readUInt8(offset++);
+    const io = [];
+
+    for (const size of [1, 2, 4, 8]) {
+      if (offset >= data.length) throw new Error('Codec 8 IO section is incomplete');
+      const count = data.readUInt8(offset++);
+      for (let item = 0; item < count; item += 1) {
+        if (offset + 1 + size > data.length) {
+          throw new Error('Codec 8 IO value is incomplete');
+        }
+        const id = data.readUInt8(offset++);
+        let value;
+        if (size === 1) value = data.readUInt8(offset);
+        if (size === 2) value = data.readUInt16BE(offset);
+        if (size === 4) value = data.readUInt32BE(offset);
+        if (size === 8) value = Number(data.readBigUInt64BE(offset));
+        offset += size;
+        io.push({ id, value });
+      }
+    }
+
+    records.push({ timestamp, priority, lat, lng, altitude, angle, sats, speed, eventId, io });
+  }
+
+  if (offset >= data.length) throw new Error('Codec 8 is missing the second record count');
+  const numRecords2 = data.readUInt8(offset++);
+  if (numRecords2 !== numRecords) {
+    throw new Error(`Codec 8 record count mismatch (${numRecords}/${numRecords2})`);
+  }
+
   return { codecID, numRecords, records };
 }
 
-const net = require('net');
+function applyFmbGps(busId, record) {
+  const lat = Number(record.lat);
+  const lng = Number(record.lng);
+  const speed = Number.isFinite(Number(record.speed)) ? Number(record.speed) : 0;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) ||
+      Math.abs(lat) > 90 || Math.abs(lng) > 180 ||
+      Math.abs(lat) <= 0.01 || Math.abs(lng) <= 0.01) {
+    console.log(`FMB920 ${busId}: ignoring invalid GPS ${record.lat}, ${record.lng}`);
+    return false;
+  }
+
+  deletedBuses.delete(busId);
+  const previous = busPositions[busId];
+  const cfg = busConfigs[busId] || {};
+  const routeKey = cfg.routeKey || busId;
+  const customStops = cfg.stops;
+  const { stop, distKm } = getNearestStop(lat, lng, routeKey, customStops, busId);
+  const nextStops = getNextStops(stop.name, routeKey, lat, lng, customStops, speed);
+  const totalSeats = Number(cfg.totalSeats) || 42;
+  const inside = previous?.inside ?? 0;
+  const now = new Date().toISOString();
+  const busData = {
+    busId,
+    routeId: cfg.routeKey || busId,
+    totalSeats,
+    lat,
+    lng,
+    speed,
+    seats: totalSeats - inside,
+    inside,
+    route: cfg.routeName || busId,
+    busNumber: cfg.busNumber || busId,
+    gpsFixed: true,
+    currentStop: stop.name || '',
+    area: previous?.area || '',
+    road: previous?.road || '',
+    city: previous?.city || '',
+    distFromStop: Number.isFinite(distKm) ? distKm.toFixed(2) : '0.00',
+    nextStops,
+    lastUpdate: now,
+  };
+
+  busPositions[busId] = busData;
+  if (!gpsHistory[busId]) gpsHistory[busId] = [];
+  gpsHistory[busId].push({ lat, lng, t: Date.now() });
+  if (gpsHistory[busId].length > 100) gpsHistory[busId].shift();
+
+  saveConfigs();
+  io.to(`bus-${busId}`).emit('busUpdate', busData);
+  io.to('all-buses').emit('busUpdate', busData);
+  reverseGeocode(lat, lng, busId);
+  console.log(`FMB920 GPS ${busId}: ${lat.toFixed(6)}, ${lng.toFixed(6)} @${speed}km/h`);
+  return true;
+}
+
 const serverFMB = net.createServer((socket) => {
   let buf = Buffer.alloc(0);
+  let imei = null;
+  let busId = null;
   let handshaked = false;
 
   socket.on('data', (chunk) => {
     buf = Buffer.concat([buf, chunk]);
+    console.log('FMB RAW:', chunk.toString('hex'));
+    console.log('FMB BUFFER LENGTH:', buf.length);
+    console.log('FMB DATA EVENT - bytes:', chunk.length);
 
     if (!handshaked) {
-      if (buf.length >= 16) {
-        const imeiRaw = buf.slice(0, 16).toString('ascii').trim();
-        const busId = fmbImeiMap[imeiRaw];
-        if (busId) {
-          socket.write(Buffer.from([0x01]));
-          handshaked = true;
-          console.log(`FMB920 handshake OK: IMEI=${imeiRaw} -> Bus ${busId}`);
-          buf = Buffer.alloc(0);
-        } else {
-          console.log(`FMB920 unknown IMEI: ${imeiRaw}, closing`);
-          socket.end();
-          return;
-        }
+      if (buf.length < 15) return;
+
+      imei = buf.subarray(0, 15).toString('ascii');
+      if (!/^\d{15}$/.test(imei)) {
+        console.log(`FMB920 invalid IMEI handshake: ${JSON.stringify(imei)}`);
+        socket.destroy();
+        return;
       }
+
+      busId = fmbImeiMap[imei];
+      if (!busId) {
+        console.log(`FMB920 unknown IMEI: ${imei}, closing`);
+        socket.end();
+        return;
+      }
+
+      socket.write(Buffer.from([0x01]));
+      handshaked = true;
+      buf = buf.subarray(15);
+      console.log(`FMB920 handshake OK: IMEI=${imei} -> Bus ${busId}`);
     }
 
-    while (buf.length >= 4) {
-      const dataLen = buf.readUInt32BE(0);
-      const needed = 4 + 4 + dataLen + 2 + 2;
-      if (buf.length < needed) break;
-
-      const payload = buf.slice(8, 8 + dataLen);
-      const storedCrc = buf.readUInt16BE(8 + dataLen);
-      const computedCrc = crc16(payload);
-
-      if (storedCrc === computedCrc) {
-        const decoded = decodeCodec8(payload);
-        if (decoded && decoded.records.length > 0) {
-          const rec = decoded.records[0];
-          const lat = rec.lat, lng = rec.lng, speed = rec.speed, sats = rec.sats;
-          const now = new Date().toISOString();
-
-          try {
-            const http = require('http');
-            const options = {
-              hostname: 'localhost',
-              port: PORT,
-              path: '/api/bus/location',
-              method: 'POST',
-              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            };
-            const reqHttp = http.request(options, (res) => { res.on('data', () => {}); });
-            reqHttp.write(`id=${busId}&lat=${lat}&lng=${lng}&speed=${speed}&passengersInside=0&status=${sats > 0 ? 'running' : 'stopped'}`);
-            reqHttp.end();
-
-            io.emit('busUpdate', { id: busId, lat, lng, speed, sats, status: sats > 0 ? 'running' : 'stopped', timestamp: now });
-          } catch (e) {
-            console.error('FMB location update error:', e.message);
-          }
-        }
+    while (buf.length >= 12) {
+      if (buf.readUInt32BE(0) !== 0) {
+        console.log(`FMB920 ${imei}: invalid packet preamble ${buf.subarray(0, 4).toString('hex')}`);
+        buf = buf.subarray(1);
+        continue;
       }
 
-      buf = buf.slice(needed);
+      const dataLength = buf.readUInt32BE(4);
+      if (dataLength < 3 || dataLength > 1024 * 1024) {
+        console.log(`FMB920 ${imei}: invalid data length ${dataLength}`);
+        buf = buf.subarray(1);
+        continue;
+      }
+
+      const packetLength = 8 + dataLength + 4;
+      if (buf.length < packetLength) break;
+
+      const dataField = buf.subarray(8, 8 + dataLength);
+      const receivedCrc = buf.readUInt32BE(8 + dataLength) & 0xFFFF;
+      const calculatedCrc = crc16(dataField);
+      buf = buf.subarray(packetLength);
+
+      if (receivedCrc !== calculatedCrc) {
+        console.log(`FMB920 ${imei}: CRC mismatch (recv ${receivedCrc} calc ${calculatedCrc})`);
+        continue;
+      }
+
+      try {
+        const decoded = decodeCodec8(dataField);
+        let processed = 0;
+        for (const record of decoded.records) {
+          if (applyFmbGps(busId, record)) processed += 1;
+        }
+
+        const ack = Buffer.alloc(4);
+        ack.writeUInt32BE(decoded.numRecords);
+        socket.write(ack);
+        console.log(`FMB920 ${imei}: processed ${processed}/${decoded.numRecords} record(s)`);
+      } catch (error) {
+        console.log(`FMB920 ${imei}: ${error.message}`);
+      }
     }
   });
 
-  socket.on('end', () => { console.log('FMB920 disconnected'); });
+  socket.on('close', () => { console.log(`FMB920 disconnected${imei ? `: ${imei}` : ''}`); });
   socket.on('error', (e) => { console.log('FMB920 socket error:', e.message); });
+});
+
+serverFMB.on('error', (error) => {
+  console.error('FMB920 TCP server error:', error.message);
 });
 
 serverFMB.listen(FMB_TCP_PORT, () => {
