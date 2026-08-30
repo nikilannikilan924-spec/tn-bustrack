@@ -695,7 +695,8 @@ mqttClient.on('message', (topic, buf) => {
 mqttClient.on('error', e => console.error('MQTT error:', e.message));
 
 // ── STALE BUS HANDLING (every 15s) ────────────────────────────
-// Keep the last known coordinate visible while a device reconnects.
+// FMB920 currently reports about every 130s, so allow two missed reports.
+const GPS_STALE_AFTER_MS = 5 * 60 * 1000;
 setInterval(() => {
   const now = Date.now();
   Object.keys(busPositions).forEach((busId) => {
@@ -703,7 +704,7 @@ setInterval(() => {
     if (!bus || !bus.lastUpdate) return;
     if (!bus.gpsFixed) return;
     const age = now - new Date(bus.lastUpdate).getTime();
-    if (age > 120000) {
+    if (age > GPS_STALE_AFTER_MS) {
       bus.gpsFixed = false;
       bus.status = 'stopped';
       console.log(`Marking stale bus ${busId} (offline ${Math.round(age / 1000)}s)`);
