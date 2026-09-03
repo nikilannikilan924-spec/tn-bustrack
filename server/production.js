@@ -202,10 +202,29 @@ function getNextStops(currentStopName, routeKey, busLat, busLng, customStops, sp
   const curIdx = stops.findIndex(s => s.name === currentStopName);
   if (curIdx === -1) return [];
   const avgSpeed = (speedKmh && speedKmh > 5) ? speedKmh : 40;
-  return stops.slice(curIdx + 1).map(stop => {
-    const distKm = getDistanceKm(busLat, busLng, stop.lat, stop.lng);
-    const etaMin = Math.round((distKm / avgSpeed) * 60);
-    return { name: stop.name, distKm: distKm.toFixed(1), etaMin };
+
+  // Compute cumulative route distances between consecutive stops
+  const routeCum = [0];
+  for (let i = 1; i < stops.length; i++) {
+    routeCum.push(routeCum[i - 1] + getDistanceKm(
+      stops[i - 1].lat, stops[i - 1].lng, stops[i].lat, stops[i].lng));
+  }
+
+  // Estimate bus progress along the current segment (currentStop -> nextStop)
+  const nextIdx = Math.min(curIdx + 1, stops.length - 1);
+  const segDist = getDistanceKm(stops[curIdx].lat, stops[curIdx].lng, stops[nextIdx].lat, stops[nextIdx].lng);
+  const busToCur = getDistanceKm(busLat, busLng, stops[curIdx].lat, stops[curIdx].lng);
+  const busToNext = getDistanceKm(busLat, busLng, stops[nextIdx].lat, stops[nextIdx].lng);
+  const progress = segDist > 0
+    ? Math.max(0, Math.min(1, (segDist + busToCur - busToNext) / (2 * segDist)))
+    : 0;
+  const busRouteKm = routeCum[curIdx] + progress * segDist;
+
+  return stops.slice(curIdx + 1).map((stop, i) => {
+    const stopIdx = curIdx + 1 + i;
+    const routeDist = Math.max(0, routeCum[stopIdx] - busRouteKm);
+    const etaMin = Math.round((routeDist / avgSpeed) * 60);
+    return { name: stop.name, distKm: routeDist.toFixed(1), etaMin };
   });
 }
 
@@ -879,6 +898,17 @@ function applyFmbGps(busId, record) {
   const routeKey = cfg.routeKey || busId;
   const customStops = cfg.stops;
   const { stop, distKm } = getNearestStop(lat, lng, routeKey, customStops, busId);
+
+  // Auto-advance: if within 300m of a stop and moving away, mark it passed
+  const fmbStops = customStops || STOPS[routeKey];
+  if (fmbStops && fmbStops.length > 0 && distKm < 0.3 && previous && stop.name) {
+    const prevDist = getDistanceKm(previous.lat, previous.lng, stop.lat, stop.lng);
+    if (prevDist < distKm) {
+      if (!passedStops[busId]) passedStops[busId] = new Set();
+      passedStops[busId].add(stop.name);
+    }
+  }
+
   const nextStops = getNextStops(stop.name, routeKey, lat, lng, customStops, speed);
   const totalSeats = Number(cfg.totalSeats) || 42;
   const inside = previous?.inside ?? 0;
