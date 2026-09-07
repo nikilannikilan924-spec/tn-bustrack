@@ -1046,31 +1046,48 @@ serverFMB.listen(FMB_TCP_PORT, () => {
 });
 
 function seedDefaultConfigs() {
+  const M31_ROUTE_SEED_VERSION = 2;
   const M31_STOPS = [
-    { name: 'Muthayammal Engineering College', lat: 11.516, lng: 78.041, sequence: 1 },
-    { name: 'Rasipuram', lat: 11.46, lng: 77.76, sequence: 2 },
-    { name: 'Puduchatram', lat: 11.37, lng: 78.13, sequence: 3 },
-    { name: 'Namakkal', lat: 11.2196, lng: 78.1677, sequence: 4 }
+    { name: 'Muthayammal College', lat: 11.4451, lng: 78.2259, sequence: 1 },
+    { name: 'Kakkaveri', lat: 11.44903, lng: 78.22177, sequence: 2 },
+    { name: 'Rasipuram New Busstand', lat: 11.4571, lng: 78.1906, sequence: 3 },
+    { name: 'Rasipuram', lat: 11.44956, lng: 78.27240, sequence: 4 },
+    { name: 'SRV Boys High School', lat: 11.4550, lng: 78.1910, sequence: 5 },
+    { name: 'Salem Highway', lat: 11.4500, lng: 78.1800, sequence: 6 },
+    { name: 'Attayampatti - Rasakkalipatti Rd', lat: 11.53194, lng: 78.04611, sequence: 7 },
+    { name: 'Athanur', lat: 11.49697, lng: 78.13516, sequence: 8 },
+    { name: 'Vennandur', lat: 11.51518, lng: 78.09073, sequence: 9 },
+    { name: 'Tiruchengode - Salem Main Rd', lat: 11.5600, lng: 78.0200, sequence: 10 },
+    { name: 'Palampatti', lat: 11.5694, lng: 78.0722, sequence: 11 },
+    { name: 'Veerapandi', lat: 11.58821, lng: 78.07682, sequence: 12 },
+    { name: 'Ariyannur', lat: 11.6050, lng: 78.0380, sequence: 13 },
+    { name: 'Rakkipatti', lat: 11.561788, lng: 78.033094, sequence: 14 },
+    { name: 'Kakapalayam', lat: 11.5570, lng: 78.0108, sequence: 15 },
+    { name: 'Magudanchavadi', lat: 11.5503, lng: 77.98638, sequence: 16 },
+    { name: 'Alagapuram', lat: 11.6650, lng: 78.1400, sequence: 17 },
+    { name: 'Kannanderi', lat: 11.559005, lng: 77.942432, sequence: 18 },
+    { name: 'Konganapuram', lat: 11.57044, lng: 77.90247, sequence: 19 },
+    { name: 'Molapalli', lat: 11.5900, lng: 77.9400, sequence: 20 },
+    { name: 'Konanampatti', lat: 11.6000, lng: 77.9200, sequence: 21 },
+    { name: 'Ettukamedu', lat: 11.6200, lng: 77.9000, sequence: 22 },
   ];
   let changed = false;
+  const existing = busConfigs['M31'];
 
-  if (!busConfigs['M31']) {
+  if (!existing || existing.seedVersion !== M31_ROUTE_SEED_VERSION) {
     busConfigs['M31'] = {
       busId: 'M31',
-      totalSeats: 42,
-      routeName: 'Muthayammal College - Namakkal',
+      totalSeats: existing?.totalSeats || 42,
+      routeName: `Muthayammal College - Ettukamedu`,
       routeKey: 'M31',
-      driverName: '',
+      driverName: existing?.driverName || '',
       busNumber: 'M31',
       stops: M31_STOPS.map(s => ({ ...s })),
+      seedVersion: M31_ROUTE_SEED_VERSION,
       updatedAt: new Date().toISOString(),
     };
     changed = true;
-    console.log('Seeded default M31 bus config');
-  } else if (!busConfigs['M31'].stops || busConfigs['M31'].stops.length === 0) {
-    busConfigs['M31'].stops = M31_STOPS.map(s => ({ ...s }));
-    changed = true;
-    console.log('Seeded M31 stops into existing config');
+    console.log(`Seeded M31 route (v${M31_ROUTE_SEED_VERSION}, ${M31_STOPS.length} stops)`);
   }
 
   const cfg = busConfigs['M31'];
