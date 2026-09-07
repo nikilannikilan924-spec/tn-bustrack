@@ -1045,11 +1045,74 @@ serverFMB.listen(FMB_TCP_PORT, () => {
   console.log(`FMB920 TCP receiver listening on port ${FMB_TCP_PORT}`);
 });
 
+function seedDefaultConfigs() {
+  const M31_STOPS = [
+    { name: 'Muthayammal Engineering College', lat: 11.516, lng: 78.041, sequence: 1 },
+    { name: 'Rasipuram', lat: 11.46, lng: 77.76, sequence: 2 },
+    { name: 'Puduchatram', lat: 11.37, lng: 78.13, sequence: 3 },
+    { name: 'Namakkal', lat: 11.2196, lng: 78.1677, sequence: 4 }
+  ];
+  let changed = false;
+
+  if (!busConfigs['M31']) {
+    busConfigs['M31'] = {
+      busId: 'M31',
+      totalSeats: 42,
+      routeName: 'Muthayammal College - Namakkal',
+      routeKey: 'M31',
+      driverName: '',
+      busNumber: 'M31',
+      stops: M31_STOPS.map(s => ({ ...s })),
+      updatedAt: new Date().toISOString(),
+    };
+    changed = true;
+    console.log('Seeded default M31 bus config');
+  } else if (!busConfigs['M31'].stops || busConfigs['M31'].stops.length === 0) {
+    busConfigs['M31'].stops = M31_STOPS.map(s => ({ ...s }));
+    changed = true;
+    console.log('Seeded M31 stops into existing config');
+  }
+
+  const cfg = busConfigs['M31'];
+  if (cfg && !busPositions['M31']) {
+    const firstStop = cfg.stops[0];
+    const virtualLat = firstStop ? firstStop.lat : 11.3;
+    const virtualLng = firstStop ? firstStop.lng : 78.1;
+    const virtualStop = firstStop ? firstStop.name : '';
+    const nextStops = getNextStops(virtualStop, cfg.routeKey || 'M31', virtualLat, virtualLng, cfg.stops);
+    busPositions['M31'] = {
+      busId: 'M31',
+      routeId: cfg.routeKey || 'M31',
+      totalSeats: cfg.totalSeats || 42,
+      lat: virtualLat,
+      lng: virtualLng,
+      speed: 0,
+      seats: cfg.totalSeats || 42,
+      inside: 0,
+      route: cfg.routeName || 'M31',
+      busNumber: cfg.busNumber || 'M31',
+      gpsFixed: false,
+      currentStop: virtualStop,
+      area: virtualStop,
+      road: cfg.routeName || '',
+      city: '',
+      distFromStop: '0.00',
+      nextStops,
+      lastUpdate: new Date().toISOString(),
+    };
+    changed = true;
+    console.log('Seeded M31 virtual position');
+  }
+
+  if (changed) saveConfigs();
+}
+
 // ── START ────────────────────────────────────────────────────
 const PORT = Number(process.env.PORT || 3000);
 
 nextApp.prepare().then(() => {
   loadConfigs();
+  seedDefaultConfigs();
   server.listen(PORT, () => {
     console.log(`TN BusTrack production server running on http://localhost:${PORT}`);
   });
